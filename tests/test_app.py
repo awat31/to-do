@@ -215,3 +215,21 @@ def test_quick_add_work_date(logged_in):
 def test_healthz(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200
+
+
+def test_production_allows_plain_http_sessions():
+    """Regression: secure cookies would break CSRF over plain http://."""
+    os.environ.pop("TODO_SECURE_COOKIES", None)
+    from app.config import ProductionConfig
+    app = create_app(ProductionConfig)
+    assert app.config["SESSION_COOKIE_SECURE"] is False
+
+
+def test_session_cookie_not_secure_over_http(client):
+    client.get("/login")
+    # cookie jar must retain the session for the subsequent POST
+    resp = client.post(
+        "/login", data={"username": "admin", "password": "test-password"},
+        follow_redirects=True,
+    )
+    assert "Invalid" not in resp.data.decode()

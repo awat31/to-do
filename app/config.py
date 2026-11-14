@@ -30,7 +30,9 @@ class Config:
 class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
-    SESSION_COOKIE_SECURE = os.environ.get("TODO_INSECURE_COOKIES", "") != "1"
+    # Only set when the app is served behind HTTPS (e.g. a TLS reverse proxy),
+    # otherwise browsers silently drop the session cookie over plain http://.
+    SESSION_COOKIE_SECURE = os.environ.get("TODO_SECURE_COOKIES", "") == "1"
 
 
 class DevelopmentConfig(Config):
