@@ -18,9 +18,20 @@ from .models import Task, TaskDate, db
 bp = Blueprint("calendarview", __name__, url_prefix="/calendar")
 
 
-def _mode() -> str:
-    m = request.args.get("mode", "both")
-    return m if m in ("both", "due", "work") else "both"
+def _selection() -> tuple[bool, bool]:
+    """Which sections to show, from the Due / Working on selectors.
+
+    A 'mode=due|work|both' legacy param still works. Otherwise: no selector
+    in the URL at all means both; once any selector is present, each section
+    is exactly what it says (absent = off).
+    """
+    args = request.args
+    legacy = args.get("mode")
+    if legacy in ("due", "work", "both"):
+        return legacy in ("due", "both"), legacy in ("work", "both")
+    if "due" not in args and "work" not in args:
+        return True, True
+    return args.get("due") == "1", args.get("work") == "1"
 
 
 def _keyfn(kind: str):
@@ -67,12 +78,12 @@ def view(kind: str, value: str | None):
     except periods.BadPeriod:
         abort(404)
 
-    mode = _mode()
+    due_sel, work_sel = _selection()
     keyfn = _keyfn(kind)
     hide = session.get("hide_completed", False)
 
-    due_break = _due_breakdown(kind, p["start"], p["end"], keyfn)
-    work_break = _work_breakdown(kind, p["start"], p["end"], keyfn)
+    due_break = _due_breakdown(kind, p["start"], p["end"], keyfn) if due_sel else []
+    work_break = _work_breakdown(kind, p["start"], p["end"], keyfn) if work_sel else []
     if hide:
         due_break = _strip_done(due_break)
         work_break = _strip_done(work_break)
@@ -81,7 +92,7 @@ def view(kind: str, value: str | None):
 
     return render_template(
         "calendar.html",
-        p=p, kind=kind, mode=mode,
+        p=p, kind=kind, due_sel=due_sel, work_sel=work_sel,
         due_break=due_break, work_break=work_break,
         due_count=due_count, work_count=work_count,
     )

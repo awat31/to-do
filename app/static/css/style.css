@@ -239,7 +239,11 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 }
 .kind-tab:hover, .mode-tab:hover { background: var(--accent-soft); text-decoration: none; color: var(--ink); }
 .kind-tab.active { background: var(--accent); color: #fff; }
+.mode-tab { border: 1px solid transparent; }
 .mode-tab.active { background: #2c2a26; color: #fff; }
+.mode-tab .tick { font-size: 0.75rem; margin-right: 0.15rem; }
+.mode-tab.off { color: #b3ac9e; border-style: dashed; border-color: var(--line); background: transparent; }
+.mode-tab.off:hover { color: var(--ink); }
 .period-nav { display: flex; gap: 0.35rem; align-items: center; margin-left: auto; }
 .period-today { font-weight: 700; }
 

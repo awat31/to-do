@@ -125,8 +125,8 @@ def test_work_and_due_grouping_spec_example(logged_in):
 
     feb = logged_in.get("/calendar/month/2026-02").data.decode()
     mar = logged_in.get("/calendar/month/2026-03").data.decode()
-    year_work = logged_in.get("/calendar/year/2026?mode=work").data.decode()
-    year_due = logged_in.get("/calendar/year/2026?mode=due").data.decode()
+    year_work = logged_in.get("/calendar/year/2026?work=1").data.decode()
+    year_due = logged_in.get("/calendar/year/2026?due=1").data.decode()
 
     assert "Paint walls" in feb
     assert "Working on in February" in feb
@@ -420,6 +420,46 @@ def test_project_add_task_assigns_existing(logged_in):
         follow_redirects=True,
     )
     assert "already in this project" in resp.data.decode()
+
+
+def test_calendar_section_selectors(logged_in):
+    """Due / Working on are independent selectable sections; no 'Both' button."""
+    import datetime as dt
+    from app.models import Task, TaskDate
+
+    task = _create_task(logged_in, title="Selector test")
+    task.due_date = dt.date(2026, 3, 3)
+    due_feb = _create_task(logged_in, title="Selector due feb")
+    due_feb.due_date = dt.date(2026, 2, 20)
+    db.session.add(TaskDate(task_id=task.id, date=dt.date(2026, 2, 28)))
+    db.session.commit()
+
+    base = "/calendar/month/2026-02"
+    # default (no params): both sections
+    both = logged_in.get(base).data.decode()
+    assert "Due in February" in both and "Working on in February" in both
+    assert ">Both<" not in both
+
+    # due only
+    due_only = logged_in.get(f"{base}?due=1").data.decode()
+    assert "Due in February" in due_only
+    assert "Working on in February" not in due_only
+    assert "Selector due feb" in due_only and "Selector test" not in due_only
+
+    # work only
+    work_only = logged_in.get(f"{base}?work=1").data.decode()
+    assert "Working on in February" in work_only
+    assert "Due in February" not in work_only
+    assert "Selector test" in work_only  # the 28 Feb work-on date shows
+
+    # neither selected -> explicit hint, no sections
+    none = logged_in.get(f"{base}?due=0&work=0").data.decode()
+    assert "Due in February" not in none and "Working on in February" not in none
+    assert 'tick "Due" and/or "Working on"' in none
+
+    # legacy ?mode= URLs keep working
+    legacy = logged_in.get(f"{base}?mode=work").data.decode()
+    assert "Working on in February" in legacy and "Due in February" not in legacy
 
 
 def test_healthz(client):
