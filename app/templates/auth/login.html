@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Log in · To-Do{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <form method="post" class="stack form-card auth-card">
+    {{ form.hidden_tag() }}
+    <h1>Sign in</h1>
+    <div class="field">
+      {{ form.username.label }} {{ form.username(class="input", autofocus=True, autocomplete="username") }}
+    </div>
+    <div class="field">
+      {{ form.password.label }} {{ form.password(class="input", autocomplete="current-password") }}
+    </div>
+    <button class="btn btn-primary" type="submit">Log in</button>
+  </form>
+</div>
+{% endblock %}

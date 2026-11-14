@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import task_tree with context %}
+{% block title %}Tasks · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Tasks</h1>
+  <div class="head-actions">
+    <a class="btn btn-primary" href="{{ url_for('tasks.create') }}">New task</a>
+  </div>
+</div>
+{% if roots %}
+  {{ task_tree(roots) }}
+{% else %}
+  <p class="empty big">No tasks yet. <a href="{{ url_for('tasks.create') }}">Create your first task</a>.</p>
+{% endif %}
+{% endblock %}

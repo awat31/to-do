@@ -1,0 +1,24 @@
+[Unit]
+Description=To-Do task app (Flask + Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/to-do
+Environment=FLASK_CONFIG=production
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/root/to-do/.venv/bin/flask --app wsgi db upgrade
+ExecStart=/root/to-do/.venv/bin/gunicorn -c /root/to-do/gunicorn.conf.py wsgi:app
+Restart=always
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/root/to-do/instance
+
+[Install]
+WantedBy=multi-user.target

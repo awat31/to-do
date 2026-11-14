@@ -1,0 +1,217 @@
+import os
+
+os.environ.setdefault("FLASK_CONFIG", "testing")
+os.environ.setdefault("TODO_ADMIN_PASSWORD", "test-password")
+
+import pytest  # noqa: E402
+
+from app import create_app, db  # noqa: E402
+from app.periods import BadPeriod, period, period_value  # noqa: E402
+
+
+@pytest.fixture()
+def app():
+    application = create_app()
+    ctx = application.app_context()
+    ctx.push()
+    db.create_all()  # tests bypass migrations (in-memory SQLite)
+    from app import _ensure_admin
+    _ensure_admin(application)
+    yield application
+    db.session.remove()
+    db.drop_all()
+    ctx.pop()
+
+
+@pytest.fixture()
+def client(app):
+    return app.test_client()
+
+
+@pytest.fixture()
+def logged_in(client):
+    client.post("/login", data={"username": "admin", "password": "test-password"})
+    return client
+
+
+def _csrf(client):
+    resp = client.get("/tasks/new")
+    if resp.status_code == 302:
+        resp = client.get(resp.headers["Location"])
+    for line in resp.data.decode().splitlines():
+        if 'name="csrf_token"' in line and 'value="' in line:
+            return line.split('value="')[1].split('"')[0]
+    return ""
+
+
+def _create_task(logged_in, *, title, due=None, project=None, parent=None):
+    data = {
+        "title": title,
+        "notes": "",
+        "due_date": due or "",
+        "project_id": project or 0,
+        "parent_id": parent or 0,
+    }
+    resp = logged_in.post("/tasks/new", data=data, follow_redirects=True)
+    from app.models import Task
+    task = Task.query.filter_by(title=title).first()
+    assert task is not None
+    return task
+
+
+# --- auth ---------------------------------------------------------------
+
+def test_requires_login(client):
+    resp = client.get("/")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+
+def test_login_rejects_bad_password(client):
+    resp = client.post("/login", data={"username": "admin", "password": "wrong"})
+    assert "Invalid username or password" in resp.data.decode()
+
+
+def test_login_accepts_correct_password(client):
+    resp = client.post(
+        "/login", data={"username": "admin", "password": "test-password"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+
+# --- calendar period logic ---------------------------------------------
+
+def test_period_day():
+    p = period("day", "2026-03-03")
+    assert (p["start"], p["end"]) == (__import__("datetime").date(2026, 3, 3),) * 2
+
+
+def test_period_week():
+    p = period("week", "2026-W09")
+    assert p["start"].isoformat() == "2026-02-23"
+    assert p["end"].isoformat() == "2026-03-01"
+
+
+def test_period_year():
+    p = period("year", "2026")
+    assert p["start"].isoformat() == "2026-01-01"
+    assert p["end"].isoformat() == "2026-12-31"
+
+
+def test_period_invalid():
+    with pytest.raises(BadPeriod):
+        period("month", "nonsense")
+
+
+def test_period_value_roundtrip():
+    import datetime as dt
+    for kind in ("day", "week", "month", "year"):
+        d = dt.date(2026, 3, 3)
+        assert period_value(kind, d) == period(kind, period_value(kind, d))["value"]
+
+
+# --- core behaviour -----------------------------------------------------
+
+def test_work_and_due_grouping_spec_example(logged_in):
+    """Due 03/03/2026, work-on 28/02/2026 -> February in work view, March in due view."""
+    _create_task(logged_in, title="Paint walls", due="2026-03-03")
+    from app.models import Task, TaskDate, db
+
+    task = Task.query.filter_by(title="Paint walls").first()
+    db.session.add(TaskDate(task_id=task.id, date=__import__("datetime").date(2026, 2, 28)))
+    db.session.commit()
+
+    feb = logged_in.get("/calendar/month/2026-02").data.decode()
+    mar = logged_in.get("/calendar/month/2026-03").data.decode()
+    year_work = logged_in.get("/calendar/year/2026?mode=work").data.decode()
+    year_due = logged_in.get("/calendar/year/2026?mode=due").data.decode()
+
+    assert "Paint walls" in feb
+    assert "Working on in February" in feb
+    assert "Due in February" not in feb
+    assert "Paint walls" in mar and "Due in March" in mar
+    assert "February" in year_work and "Paint walls" in year_work
+    assert "March" in year_due and "Paint walls" in year_due
+    assert "February" not in year_due
+
+
+def test_date_range_expands_into_daily_work_dates(logged_in):
+    task = _create_task(logged_in, title="Range test")
+    logged_in.post(
+        f"/tasks/{task.id}/work-dates",
+        data={"start": "2026-03-10", "end": "2026-03-12"},
+    )
+    dates = [td.date.isoformat() for td in task.work_dates]
+    assert dates == ["2026-03-10", "2026-03-11", "2026-03-12"]
+
+
+def test_subtask_progress_and_cascade_delete(logged_in):
+    from app.models import Task
+
+    parent = _create_task(logged_in, title="Parent")
+    child = _create_task(logged_in, title="Child", parent=parent.id)
+    grandchild = _create_task(logged_in, title="Grandchild", parent=child.id)
+    grandchild.done = True
+    db.session.commit()
+
+    assert set(parent.descendant_ids()) == {child.id, grandchild.id}
+    assert parent.progress() == (1, 1)
+
+    parent_id, child_id, grandchild_id = parent.id, child.id, grandchild.id
+    logged_in.post(f"/tasks/{parent_id}/delete")
+    db.session.close()  # drop cached instances deleted by the bulk delete
+    assert Task.query.get(child_id) is None
+    assert Task.query.get(grandchild_id) is None
+
+
+def test_task_appears_in_day_week_month_year(logged_in):
+    _create_task(logged_in, title="Due today")
+    from app.models import Task
+
+    task = Task.query.filter_by(title="Due today").first()
+    task.due_date = __import__("datetime").date(2026, 2, 25)
+    db.session.commit()
+
+    for kind, value in (("day", "2026-02-25"), ("week", "2026-W09"),
+                        ("month", "2026-02"), ("year", "2026")):
+        page = logged_in.get(f"/calendar/{kind}/{value}").data.decode()
+        assert "Due today" in page, f"missing in {kind} view"
+
+
+def _meta_csrf(client, url="/"):
+    page = client.get(url).data.decode()
+    marker = 'name="csrf-token" content="'
+    return page.split(marker)[1].split('"')[0]
+
+
+def test_project_notes_autosave(logged_in):
+    logged_in.post("/projects/new", data={"name": "Renovation", "color": "pink"})
+    from app.models import Project
+    project = Project.query.first()
+    token = _meta_csrf(logged_in, f"/projects/{project.id}")
+    resp = logged_in.post(
+        f"/projects/{project.id}/notes",
+        json={"notes": "Budget ~500"},
+        headers={"X-CSRFToken": token},
+    )
+    assert resp.status_code == 200
+    assert Project.query.first().notes == "Budget ~500"
+
+
+def test_quick_add_work_date(logged_in):
+    import datetime as dt
+    task = _create_task(logged_in, title="Quick add")
+    csrf = _csrf(logged_in)
+    resp = logged_in.post(
+        f"/calendar/quick-add-date/{task.id}",
+        data={"date": "2026-02-28", "csrf_token": csrf},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert dt.date(2026, 2, 28) in [td.date for td in task.work_dates]
+
+
+def test_healthz(client):
+    resp = client.get("/healthz")
+    assert resp.status_code == 200
