@@ -376,6 +376,52 @@ def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
     assert [t.title for t in filtered] == ["Done container"]
 
 
+def test_task_search(logged_in):
+    """JSON typeahead: empty query = all tasks, otherwise filtered by title."""
+    _create_task(logged_in, title="Alpha build")
+    _create_task(logged_in, title="Beta rollout")
+    import json
+
+    all_rows = json.loads(logged_in.get("/tasks/search").data)["results"]
+    titles = [r["title"] for r in all_rows]
+    assert "Alpha build" in titles and "Beta rollout" in titles
+
+    hit = json.loads(logged_in.get("/tasks/search?q=alpha").data)["results"]
+    assert [r["title"] for r in hit] == ["Alpha build"]
+
+    miss = json.loads(logged_in.get("/tasks/search?q=zzz").data)["results"]
+    assert miss == []
+
+
+def test_project_add_task_assigns_existing(logged_in):
+    """Picking a task from the typeahead moves it into the project."""
+    from app.models import Project, Task
+
+    task = _create_task(logged_in, title="Unassigned thing")
+    assert task.project_id is None
+    project = Project.query.filter_by(name="Renovation").first()
+    if project is None:
+        logged_in.post("/projects/new", data={"name": "Renovation", "color": "pink"})
+        project = Project.query.filter_by(name="Renovation").first()
+
+    resp = logged_in.post(
+        f"/projects/{project.id}/add-task",
+        data={"title": task.title, "existing_task_id": task.id},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    db.session.expire_all()
+    assert Task.query.get(task.id).project_id == project.id
+
+    # assigning it again is a friendly no-op
+    resp = logged_in.post(
+        f"/projects/{project.id}/add-task",
+        data={"title": task.title, "existing_task_id": task.id},
+        follow_redirects=True,
+    )
+    assert "already in this project" in resp.data.decode()
+
+
 def test_healthz(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200

@@ -229,6 +229,33 @@ def remove_work_date(task_id: int, td_id: int):
     return redirect(url_for("tasks.detail", task_id=task.id))
 
 
+@bp.route("/search")
+@login_required
+def search():
+    """JSON task-name search for the typeahead on the project page.
+
+    Empty query returns all tasks (capped); otherwise titles containing the
+    query, case-insensitive.
+    """
+    q = (request.args.get("q") or "").strip()
+    query = Task.query
+    if q:
+        query = query.filter(Task.title.ilike(f"%{q}%"))
+    tasks = query.order_by(Task.title).limit(50).all()
+    return {
+        "results": [
+            {
+                "id": t.id,
+                "title": t.title,
+                "project": t.project.name if t.project else None,
+                "done": t.done,
+            }
+            for t in tasks
+        ],
+        "capped": query.count() > 50,
+    }
+
+
 @bp.route("/scheduled")
 @login_required
 def scheduled():

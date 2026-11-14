@@ -113,6 +113,28 @@ h3 { margin: 0; }
 .flash-ok { background: #e7f8ef; color: #166534; }
 .flash-error { background: #fee2e2; color: #b91c1c; }
 
+/* ---- task typeahead (project "add task" box) ---- */
+.task-search { position: relative; }
+.typeahead {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(60 50 20 / 0.18); max-height: 280px; overflow: auto;
+  padding: 0.3rem; display: flex; flex-direction: column; gap: 2px;
+}
+.typeahead[hidden] { display: none; }
+.typeahead-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.6rem; border: none; background: transparent; border-radius: 8px;
+  cursor: pointer; font: inherit; text-align: left; width: 100%; color: var(--ink);
+}
+.typeahead-item:hover, .typeahead-item.is-active { background: var(--accent-soft); }
+.typeahead-item em {
+  color: var(--ink-soft); font-size: 0.75rem; font-style: normal;
+  padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--accent-soft); white-space: nowrap;
+}
+.typeahead-item.is-done span:first-child { text-decoration: line-through; opacity: 0.55; }
+.typeahead-empty { padding: 0.4rem 0.6rem; color: var(--ink-soft); font-style: italic; }
+
 /* ---- jump-to-date popup ---- */
 .jump-wrap { position: relative; }
 .jump-pop {
@@ -255,8 +277,7 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 .notes-editor { resize: vertical; font-family: inherit; }
 .notebook { background: #fffdf7; border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow); }
 .notebook-editor {
-  background:
-    repeating-linear-gradient(transparent, transparent calc(1.5em - 1px), #f1ead9 calc(1.5em - 1px), #f1ead9 1.5em);
+  background: var(--surface);
   line-height: 1.5em; border: none;
 }
 .save-status { font-size: 0.75rem; color: var(--ok); font-weight: 600; min-height: 1em; display: block; margin-top: 0.25rem; }

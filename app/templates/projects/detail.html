@@ -34,9 +34,11 @@
       {% else %}
         <p class="empty">No tasks assigned to this project yet.</p>
       {% endif %}
-      <form method="post" action="{{ url_for('projects.add_task', project_id=project.id) }}" class="inline-add">
+      <form method="post" action="{{ url_for('projects.add_task', project_id=project.id) }}" class="inline-add task-search">
         {{ task_form.hidden_tag() }}
-        {{ task_form.title(class="input", placeholder="Add a task to this project…", autocomplete="off") }}
+        <input type="hidden" name="existing_task_id" value="">
+        {{ task_form.title(class="input", placeholder="Add a task to this project… (type to search existing)", autocomplete="off") }}
+        <div class="typeahead" hidden></div>
         <button class="btn btn-primary" type="submit">Add</button>
       </form>
     </section>

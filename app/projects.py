@@ -92,6 +92,20 @@ def notes(project_id: int):
 @login_required
 def add_task(project_id: int):
     project = Project.query.get_or_404(project_id)
+
+    # Typeahead pick: attach an existing task to this project instead of
+    # creating a duplicate.
+    existing_id = request.form.get("existing_task_id", type=int)
+    if existing_id:
+        task = Task.query.get_or_404(existing_id)
+        if task.project_id == project.id:
+            flash(f"{task.title!r} is already in this project.", "error")
+        else:
+            task.project_id = project.id
+            db.session.commit()
+            flash(f"Added {task.title!r} to this project.", "ok")
+        return redirect(url_for("projects.detail", project_id=project.id))
+
     form = QuickTaskForm()
     if form.validate_on_submit():
         task = Task(title=form.title.data.strip(), project_id=project.id)
