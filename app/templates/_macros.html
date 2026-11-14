@@ -8,7 +8,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro task_card(task, next_url=None, show_dates=true) %}
+{% macro task_card(task, next_url=None, show_dates=true, default_date=None) %}
 <div class="task-card {{ 'is-done' if task.done }}" data-task-id="{{ task.id }}">
   <form method="post" action="{{ url_for('tasks.toggle', task_id=task.id) }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -43,7 +43,10 @@
   <form method="post" action="{{ url_for('calendarview.quick_add_date', task_id=task.id) }}" class="inline-form quick-add">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-    <input type="date" name="date" class="input input-date-sm" aria-label="Add work-on date" onchange="this.form.submit()">
+    <input type="date" name="date" class="input input-date-sm" aria-label="Add work-on date"
+           value="{{ default_date.isoformat() if default_date else '' }}"
+           title="{{ 'Add ' ~ (default_date | human_date) if default_date else 'Add a work-on date' }}"
+           onchange="this.form.submit()">
     <button class="btn btn-sm btn-soft" type="submit" title="Add this work-on date">＋</button>
   </form>
 </div>

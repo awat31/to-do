@@ -5,7 +5,7 @@ Structure per section (Due / Working on):
 A group is a day (day/week/month views) or a month (year view); inside a
 group, tasks are listed under their exact dates.
 """
-from flask import Blueprint, abort, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from flask_wtf.csrf import validate_csrf
 from werkzeug.exceptions import BadRequest
@@ -73,17 +73,28 @@ def view(kind: str, value: str | None):
 @bp.route("/quick-add-date/<int:task_id>", methods=("POST",))
 @login_required
 def quick_add_date(task_id: int):
-    """Add a work-on date to a task straight from a calendar card."""
+    """Add a work-on date to a task straight from a calendar card.
+
+    An empty date input means 'today' (that is the pre-filled default on the
+    dashboard); an unparseable value redirects back with a flash message
+    instead of erroring out.
+    """
     task = Task.query.get_or_404(task_id)
     try:
         validate_csrf(request.form.get("csrf_token", ""))
     except BadRequest:
         abort(400)
-    try:
-        d = periods.parse_day(request.form.get("date", ""))
-    except ValueError:
-        abort(400)
+    raw = (request.form.get("date") or "").strip()
+    if raw:
+        try:
+            d = periods.parse_day(raw)
+        except ValueError:
+            flash(f"Could not read date {raw!r}; pick one from the picker.", "error")
+            return redirect(request.form.get("next") or url_for("calendarview.view", kind="day"))
+    else:
+        d = periods.today()
     if not TaskDate.query.filter_by(task_id=task.id, date=d).first():
         db.session.add(TaskDate(task_id=task.id, date=d))
         db.session.commit()
+        flash(f"Added {d.strftime('%a %-d %b %Y')} as a work-on date for {task.title!r}.", "ok")
     return redirect(request.form.get("next") or url_for("calendarview.view", kind="day"))

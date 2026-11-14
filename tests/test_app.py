@@ -213,6 +213,42 @@ def test_quick_add_work_date(logged_in):
     assert dt.date(2026, 2, 28) in [td.date for td in task.work_dates]
 
 
+def test_quick_add_date_defaults_to_today(logged_in):
+    """Regression: clicking ＋ with an empty date box gave a 400."""
+    import datetime as dt
+    task = _create_task(logged_in, title="Quick add empty")
+    csrf = _csrf(logged_in)
+    resp = logged_in.post(
+        f"/calendar/quick-add-date/{task.id}",
+        data={"date": "", "csrf_token": csrf},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert dt.date.today() in [td.date for td in task.work_dates]
+
+
+def test_quick_add_invalid_date_flashes_not_400(logged_in):
+    task = _create_task(logged_in, title="Quick add garbage")
+    csrf = _csrf(logged_in)
+    resp = logged_in.post(
+        f"/calendar/quick-add-date/{task.id}",
+        data={"date": "not-a-date", "csrf_token": csrf},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "Could not read date" in resp.data.decode()
+
+
+def test_dashboard_card_prefills_today(logged_in):
+    """The ＋ box on dashboard cards should carry today's date pre-filled."""
+    import datetime as dt
+    task = _create_task(logged_in, title="Due now")
+    task.due_date = dt.date.today()
+    db.session.commit()
+    page = logged_in.get("/").data.decode()
+    assert f'value="{dt.date.today().isoformat()}"' in page
+
+
 def test_dashboard_renders_with_upcoming_tasks(logged_in):
     """Regression: dashboard 500 (dict unpacking) once tasks exist."""
     import datetime as dt
