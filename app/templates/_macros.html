@@ -59,8 +59,9 @@
     <div class="tree-row">
       {{ task_card(task, next_url=next_url) }}
     </div>
-    {% if task.children %}
-      {{ loop(task.children | list) }}
+    {% set kids = task._filtered_children if task._filtered_children is defined else task.children %}
+    {% if kids %}
+      {{ loop(kids | list) }}
     {% endif %}
   </li>
   {% endfor %}

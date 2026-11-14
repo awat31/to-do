@@ -5,7 +5,9 @@ Structure per section (Due / Working on):
 A group is a day (day/week/month views) or a month (year view); inside a
 group, tasks are listed under their exact dates.
 """
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+import datetime as dt
+
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from flask_login import login_required
 from flask_wtf.csrf import validate_csrf
 from werkzeug.exceptions import BadRequest
@@ -42,6 +44,17 @@ def _work_breakdown(kind: str, start, end, keyfn) -> list:
     return [(k, sorted(m.items())) for k, m in sorted(grouped.items())]
 
 
+def _strip_done(breaks):
+    """Drop done tasks (and then-empty dates/groups) from a breakdown."""
+    out = []
+    for key, days in breaks:
+        kept = [(d, [t for t in ts if not t.done]) for d, ts in days]
+        kept = [(d, ts) for d, ts in kept if ts]
+        if kept:
+            out.append((key, kept))
+    return out
+
+
 @bp.route("/", defaults={"kind": "day", "value": None})
 @bp.route("/<kind>/", defaults={"value": None})
 @bp.route("/<kind>/<value>")
@@ -56,9 +69,13 @@ def view(kind: str, value: str | None):
 
     mode = _mode()
     keyfn = _keyfn(kind)
+    hide = session.get("hide_completed", False)
 
     due_break = _due_breakdown(kind, p["start"], p["end"], keyfn)
     work_break = _work_breakdown(kind, p["start"], p["end"], keyfn)
+    if hide:
+        due_break = _strip_done(due_break)
+        work_break = _strip_done(work_break)
     due_count = sum(len(tasks) for _, days in due_break for _, tasks in days)
     work_count = sum(len(tasks) for _, days in work_break for _, tasks in days)
 
@@ -68,6 +85,35 @@ def view(kind: str, value: str | None):
         due_break=due_break, work_break=work_break,
         due_count=due_count, work_count=work_count,
     )
+
+
+@bp.route("/jump", methods=("GET",))
+@login_required
+def jump():
+    """Target of the calendar popup's date picker.
+
+    Precedence: a picked date -> day view; otherwise month+year -> month
+    view; otherwise just a year -> year view.
+    """
+    raw = (request.args.get("date") or "").strip()
+    if raw:
+        try:
+            d = periods.parse_day(raw)
+        except ValueError:
+            abort(400)
+        return redirect(url_for(".view", kind="day", value=d.isoformat()))
+
+    year = request.args.get("year", type=int)
+    month = request.args.get("month", type=int)
+    if year and month:
+        try:
+            d = dt.date(year, month, 1)
+        except ValueError:
+            abort(400)
+        return redirect(url_for(".view", kind="month", value=periods.month_value(d)))
+    if year:
+        return redirect(url_for(".view", kind="year", value=f"{year:04d}"))
+    return redirect(url_for(".view", kind="day"))
 
 
 @bp.route("/quick-add-date/<int:task_id>", methods=("POST",))

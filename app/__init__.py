@@ -136,11 +136,14 @@ def create_app(config_class=None) -> Flask:
 
     @app.context_processor
     def inject_globals():
+        from flask import session
         return {
             "PROJECT_COLORS": PROJECT_COLORS,
             "color_hex": lambda name: PROJECT_COLORS.get(name, PROJECT_COLORS["blue"]),
             "today": periods.today(),
             "kinds": periods.KINDS,
+            "months": periods.MONTH_NAMES,
+            "hide_completed": session.get("hide_completed", False),
         }
 
     @app.errorhandler(404)

@@ -113,6 +113,35 @@ h3 { margin: 0; }
 .flash-ok { background: #e7f8ef; color: #166534; }
 .flash-error { background: #fee2e2; color: #b91c1c; }
 
+/* ---- jump-to-date popup ---- */
+.jump-wrap { position: relative; }
+.jump-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: 0 10px 30px rgb(60 50 20 / 0.18);
+  padding: 1rem; width: 300px; display: flex; flex-direction: column; gap: 0.75rem;
+}
+.jump-pop[hidden] { display: none; }
+.jump-pop::before {
+  content: ""; position: absolute; top: -7px; right: 18px;
+  width: 12px; height: 12px; background: var(--surface);
+  border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.jump-pop .field-row { gap: 0.4rem; }
+.jump-pop .input { width: auto; flex: 1; }
+
+/* ---- hide-completed toggle ---- */
+.hide-done-toggle { display: inline-flex; }
+.toggle {
+  display: inline-flex; gap: 0.45rem; align-items: center; cursor: pointer;
+  font-weight: 600; font-size: 0.85rem; color: var(--ink-soft);
+  padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); user-select: none;
+}
+.toggle:hover { background: var(--accent-soft); color: var(--ink); }
+.toggle input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+
 /* ---- task cards ---- */
 .task-card {
   display: flex; align-items: flex-start; gap: 0.6rem;

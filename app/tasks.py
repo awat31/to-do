@@ -1,7 +1,7 @@
 """Task management: CRUD, recursive sub-tasks, due dates, work-on dates."""
 import datetime as dt
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from flask_login import login_required
 from flask_wtf.csrf import validate_csrf
 from werkzeug.exceptions import BadRequest
@@ -44,12 +44,17 @@ def _parse_ids(form) -> tuple[int, int]:
 @login_required
 def index():
     """All top-level tasks with their full sub-task trees."""
+    from .queries import filter_task_tree
+
     roots = (
         Task.query
         .filter(Task.parent_id.is_(None))
         .order_by(Task.done, Task.due_date.is_(True), Task.due_date, Task.position, Task.id)
         .all()
     )
+    hide = session.get("hide_completed", False)
+    if hide:
+        roots = filter_task_tree(roots, hide_done=True)
     return render_template("tasks/index.html", roots=roots, delete_form=DeleteForm())
 
 

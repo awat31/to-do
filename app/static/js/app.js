@@ -70,4 +70,33 @@
     },
     true
   );
+
+  // "Jump to…" popup on the calendar toolbar.
+  const jumpBtn = document.getElementById("jump-toggle");
+  const jumpPop = document.getElementById("jump-pop");
+  if (jumpBtn && jumpPop) {
+    const setOpen = (open) => {
+      jumpPop.hidden = !open;
+      jumpBtn.setAttribute("aria-expanded", String(open));
+      if (open) {
+        const dateInput = jumpPop.querySelector('input[type="date"]');
+        if (dateInput) dateInput.showPicker ? dateInput.showPicker() : dateInput.focus();
+      }
+    };
+    jumpBtn.addEventListener("click", () =>
+      setOpen(jumpPop.hidden)
+    );
+    document.addEventListener("click", (e) => {
+      if (
+        !jumpPop.hidden &&
+        !jumpPop.contains(e.target) &&
+        !jumpBtn.contains(e.target)
+      ) {
+        setOpen(false);
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setOpen(false);
+    });
+  }
 })();

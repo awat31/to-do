@@ -134,7 +134,9 @@ def test_work_and_due_grouping_spec_example(logged_in):
     assert "Paint walls" in mar and "Due in March" in mar
     assert "February" in year_work and "Paint walls" in year_work
     assert "March" in year_due and "Paint walls" in year_due
-    assert "February" not in year_due
+    # (the jump popup's month dropdown also contains month names, so check
+    # the section headings specifically)
+    assert '"subhead">February' not in year_due
 
 
 def test_date_range_expands_into_daily_work_dates(logged_in):
@@ -292,6 +294,81 @@ def test_admin_password_syncs_from_env(app):
         user = User.query.filter_by(username="admin").first()
         user.set_password("test-password")
         db.session.commit()
+
+
+def test_calendar_jump_day_week_month_year(logged_in):
+    csrf = _csrf(logged_in)
+    import datetime as dt
+
+    for qs, expected in (
+        ({"date": "2026-03-03"}, "/calendar/day/2026-03-03"),
+        ({"year": "2026", "month": "3"}, "/calendar/month/2026-03"),
+        ({"year": "2026"}, "/calendar/year/2026"),
+    ):
+        resp = logged_in.get("/calendar/jump", query_string=qs)
+        assert resp.status_code == 302
+        assert expected in resp.headers["Location"]
+    # bad date -> 400, not a crash
+    assert logged_in.get("/calendar/jump", query_string={"date": "nope"}).status_code == 400
+
+
+def test_hide_completed_preference(logged_in):
+    import datetime as dt
+    from app.models import Task, TaskDate
+
+    done = _create_task(logged_in, title="Finished thing")
+    done.due_date = dt.date.today()
+    done.done = True
+    open_task = _create_task(logged_in, title="Open thing")
+    # work-on today but not due today -> shows only in 'Working on today'
+    db.session.add(TaskDate(task_id=open_task.id, date=dt.date.today()))
+    db.session.commit()
+    csrf = _csrf(logged_in)
+    day_url = f"/calendar/day/{dt.date.today().isoformat()}"
+
+    # default: both visible everywhere
+    dash = logged_in.get("/").data.decode()
+    assert "Finished thing" in dash and "Open thing" in dash
+    cal = logged_in.get(day_url).data.decode()
+    assert "Finished thing" in cal
+    tasks_page = logged_in.get("/tasks/").data.decode()
+    assert "Finished thing" in tasks_page
+
+    # toggle on
+    logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/"})
+    dash = logged_in.get("/").data.decode()
+    assert "Finished thing" not in dash and "Open thing" in dash
+    assert 'Working on today <span class="count">1' in dash
+
+    cal = logged_in.get(day_url).data.decode()
+    assert "Finished thing" not in cal and "Open thing" in cal
+
+    tasks_page = logged_in.get("/tasks/").data.decode()
+    assert "Finished thing" not in tasks_page
+
+    # toggle back off (unchecked box posts no 'hide' field)
+    logged_in.post("/preferences/hide-completed", data={"next": "/"})
+    assert "Finished thing" in logged_in.get("/").data.decode()
+
+
+def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
+    parent = _create_task(logged_in, title="Done container")
+    parent.done = True
+    _create_task(logged_in, title="Still open child", parent=parent.id)
+    from app.models import Task
+
+    parent.done = True
+    db.session.commit()
+
+    logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/"})
+    page = logged_in.get("/tasks/").data.decode()
+    assert "Still open child" in page          # child survives
+    assert "Done container" in page            # kept as its container
+    page2 = logged_in.get("/tasks/").data.decode()
+    from app.queries import filter_task_tree
+    roots = Task.query.filter_by(parent_id=None).all()
+    filtered = filter_task_tree(roots, True)
+    assert [t.title for t in filtered] == ["Done container"]
 
 
 def test_healthz(client):

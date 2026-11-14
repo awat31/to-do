@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% from "_macros.html" import task_card with context %}
+{% from "_prefs.html" import hide_completed_toggle %}
 {% block title %}{{ p.label }} · To-Do{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>{{ p.label }}</h1>
   <div class="head-actions">
+    {{ hide_completed_toggle(url_for('calendarview.view', kind=kind, value=p.value, mode=mode)) }}
     <a class="btn btn-primary" href="{{ url_for('tasks.create') }}">New task</a>
   </div>
 </div>
@@ -24,6 +26,31 @@
     <a class="mode-tab {{ 'active' if mode == 'both' }}" href="{{ url_for('calendarview.view', kind=kind, value=p.value, mode='both') }}">Both</a>
     <a class="mode-tab {{ 'active' if mode == 'due' }}" href="{{ url_for('calendarview.view', kind=kind, value=p.value, mode='due') }}">Due</a>
     <a class="mode-tab {{ 'active' if mode == 'work' }}" href="{{ url_for('calendarview.view', kind=kind, value=p.value, mode='work') }}">Working on</a>
+  </div>
+  <div class="jump-wrap">
+    <button type="button" id="jump-toggle" class="btn btn-soft" aria-haspopup="true" aria-expanded="false">📅 Jump to…</button>
+    <div class="jump-pop" id="jump-pop" hidden>
+      <form method="get" action="{{ url_for('calendarview.jump') }}" class="stack">
+        <label class="lbl" for="jump-date">Pick a day</label>
+        <input type="date" id="jump-date" name="date" class="input input-date" value="{{ p.start.isoformat() }}"
+               onchange="this.form.submit()">
+        <button class="btn btn-primary btn-sm" type="submit">Go</button>
+      </form>
+      <form method="get" action="{{ url_for('calendarview.jump') }}" class="stack">
+        <label class="lbl">…or a month / year</label>
+        <div class="field-row">
+          <select name="month" class="input">
+            <option value="">Month…</option>
+            {% for m in months %}
+              <option value="{{ loop.index }}">{{ m }}</option>
+            {% endfor %}
+          </select>
+          <input type="number" name="year" class="input" min="1900" max="2999" placeholder="Year"
+                 value="{{ p.start.year if kind != 'year' else p.start.year }}">
+        </div>
+        <button class="btn btn-soft btn-sm" type="submit">Go</button>
+      </form>
+    </div>
   </div>
 </div>
 

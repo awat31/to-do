@@ -56,3 +56,23 @@ def upcoming(days: int = 7, since: dt.date | None = None) -> list[tuple[dt.date,
     end = start + dt.timedelta(days=days - 1)
     groups = due_groups(start, end)
     return sorted(groups.items())
+
+
+def filter_task_tree(tasks, hide_done: bool) -> list:
+    """Prune done tasks from a task tree.
+
+    A done task is dropped unless it still has open sub-tasks, in which case
+    it stays visible (struck through) as a container so its children don't
+    disappear. The filtered child list is attached as `_filtered_children`
+    for the task_tree template macro.
+    """
+    if not hide_done:
+        return list(tasks)
+    out = []
+    for task in tasks:
+        kids = filter_task_tree(task.children, True) if task.children else []
+        if task.done and not kids:
+            continue
+        task._filtered_children = kids
+        out.append(task)
+    return out
