@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import task_card with context %}
-{% from "_prefs.html" import hide_completed_toggle %}
+{% from "_prefs.html" import hide_completed_toggle with context %}
 {% block title %}{{ p.label }} · To-Do{% endblock %}
 {% block content %}
 <div class="page-head">

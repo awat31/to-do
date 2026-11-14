@@ -131,16 +131,28 @@ h3 { margin: 0; }
 .jump-pop .field-row { gap: 0.4rem; }
 .jump-pop .input { width: auto; flex: 1; }
 
-/* ---- hide-completed toggle ---- */
+/* ---- hide-completed slider switch ---- */
 .hide-done-toggle { display: inline-flex; }
-.toggle {
-  display: inline-flex; gap: 0.45rem; align-items: center; cursor: pointer;
-  font-weight: 600; font-size: 0.85rem; color: var(--ink-soft);
-  padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--surface); user-select: none;
+.switch {
+  display: inline-flex; gap: 0.5rem; align-items: center; cursor: pointer;
+  font-weight: 600; font-size: 0.85rem; color: var(--ink-soft); user-select: none;
 }
-.toggle:hover { background: var(--accent-soft); color: var(--ink); }
-.toggle input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+.switch:hover .switch-label { color: var(--ink); }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track {
+  width: 34px; height: 20px; border-radius: 999px; background: #d8d2c2;
+  display: inline-block; position: relative; transition: background 0.15s;
+  flex-shrink: 0; border: 1px solid rgba(0,0,0,0.06);
+}
+.switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: #fff; transition: transform 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+.switch input:checked + .switch-track { background: var(--accent); }
+.switch input:checked + .switch-track .switch-knob { transform: translateX(14px); }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch-label { white-space: nowrap; }
 
 /* ---- task cards ---- */
 .task-card {

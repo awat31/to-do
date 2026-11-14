@@ -335,8 +335,11 @@ def test_hide_completed_preference(logged_in):
     assert "Finished thing" in tasks_page
 
     # toggle on
-    logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/"})
+    logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/"},
+                   follow_redirects=True)
     dash = logged_in.get("/").data.decode()
+    # regression: the switch must render its ON state (was always unchecked)
+    assert 'name="hide" value="1" checked' in dash
     assert "Finished thing" not in dash and "Open thing" in dash
     assert 'Working on today <span class="count">1' in dash
 
@@ -346,9 +349,11 @@ def test_hide_completed_preference(logged_in):
     tasks_page = logged_in.get("/tasks/").data.decode()
     assert "Finished thing" not in tasks_page
 
-    # toggle back off (unchecked box posts no 'hide' field)
+    # toggle back off (unchecked switch posts no 'hide' field)
     logged_in.post("/preferences/hide-completed", data={"next": "/"})
-    assert "Finished thing" in logged_in.get("/").data.decode()
+    off = logged_in.get("/").data.decode()
+    assert "Finished thing" in off
+    assert 'name="hide" value="1" checked' not in off
 
 
 def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
