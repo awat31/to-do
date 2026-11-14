@@ -19,7 +19,11 @@ def dashboard():
     month_end = month_end.replace(day=1) - dt.timedelta(days=1)
 
     due_today = queries.due_groups(t, t).get(t, [])
-    work_today = queries.work_groups(t, t).get(t, [])
+    due_ids = {task.id for task in due_today}
+    work_all = queries.work_groups(t, t).get(t, [])
+    # Hide tasks already shown under 'Due today' so the list and its
+    # count always match.
+    work_today = [task for task in work_all if task.id not in due_ids]
     week_due = sorted(queries.due_groups(t + dt.timedelta(days=1), week_end).items())
     month_due = sorted(queries.due_groups(week_end + dt.timedelta(days=1), month_end).items())
 

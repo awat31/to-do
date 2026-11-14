@@ -249,6 +249,20 @@ def test_dashboard_card_prefills_today(logged_in):
     assert f'value="{dt.date.today().isoformat()}"' in page
 
 
+def test_dashboard_work_count_matches_list(logged_in):
+    """Regression: 'Working on today' counted tasks hidden as due-today dupes."""
+    import datetime as dt
+    task = _create_task(logged_in, title="Both today")
+    task.due_date = dt.date.today()
+    from app.models import TaskDate
+    db.session.add(TaskDate(task_id=task.id, date=dt.date.today()))
+    db.session.commit()
+
+    page = logged_in.get("/").data.decode()
+    assert 'Working on today <span class="count">0</span>' in page
+    assert "Both today" in page  # visible once, under Due today
+
+
 def test_dashboard_renders_with_upcoming_tasks(logged_in):
     """Regression: dashboard 500 (dict unpacking) once tasks exist."""
     import datetime as dt

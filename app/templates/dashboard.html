@@ -26,12 +26,10 @@
 
 <section class="section">
   <h2><span class="dot dot-work"></span>Working on today <span class="count">{{ work_today | length }}</span></h2>
-  {% set work_ids = work_today | map(attribute='id') | list %}
-  {% set work_set = work_ids | tojson %}
-  {% for task in work_today if task.id not in (due_today | map(attribute='id') | list) %}
+  {% for task in work_today %}
     {{ task_card(task, next_url=request.path, default_date=today) }}
   {% endfor %}
-  {% if not work_today %}<p class="empty">No work scheduled for today.</p>{% endif %}
+  {% if not work_today %}<p class="empty">No work scheduled for today (beyond what's already due).</p>{% endif %}
 </section>
 
 <section class="section">
