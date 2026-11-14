@@ -1,7 +1,8 @@
 import os
 
-os.environ.setdefault("FLASK_CONFIG", "testing")
-os.environ.setdefault("TODO_ADMIN_PASSWORD", "test-password")
+# Force test determinism regardless of .env / shell environment
+os.environ["FLASK_CONFIG"] = "testing"
+os.environ["TODO_ADMIN_PASSWORD"] = "test-password"
 
 import pytest  # noqa: E402
 
@@ -212,6 +213,37 @@ def test_quick_add_work_date(logged_in):
     assert dt.date(2026, 2, 28) in [td.date for td in task.work_dates]
 
 
+def test_dashboard_renders_with_upcoming_tasks(logged_in):
+    """Regression: dashboard 500 (dict unpacking) once tasks exist."""
+    import datetime as dt
+    task = _create_task(logged_in, title="Later")
+    task.due_date = dt.date.today() + dt.timedelta(days=3)
+    db.session.commit()
+    page = logged_in.get("/").data.decode()
+    assert "Later" in page and task.due_date.strftime("%a %-d %b %Y") in page
+
+
+def test_admin_password_syncs_from_env(app):
+    """Regression: .env password must update an existing admin account."""
+    import os
+    from app import _ensure_admin
+    from app.models import User
+    user = User.query.filter_by(username="admin").first()
+    assert user.check_password("test-password")
+
+    os.environ["TODO_ADMIN_PASSWORD"] = "brand-new-secret"
+    try:
+        _ensure_admin(app)
+        db.session.expire_all()
+        assert User.query.filter_by(username="admin").first().check_password("brand-new-secret")
+        assert not User.query.filter_by(username="admin").first().check_password("test-password")
+    finally:
+        os.environ["TODO_ADMIN_PASSWORD"] = "test-password"  # restore for other tests
+        user = User.query.filter_by(username="admin").first()
+        user.set_password("test-password")
+        db.session.commit()
+
+
 def test_healthz(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200
@@ -220,6 +252,7 @@ def test_healthz(client):
 def test_production_allows_plain_http_sessions():
     """Regression: secure cookies would break CSRF over plain http://."""
     os.environ.pop("TODO_SECURE_COOKIES", None)
+    os.environ["TODO_ADMIN_PASSWORD"] = "test-password"  # keep _ensure_admin deterministic
     from app.config import ProductionConfig
     app = create_app(ProductionConfig)
     assert app.config["SESSION_COOKIE_SECURE"] is False

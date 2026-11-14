@@ -8,6 +8,7 @@ from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
+from dotenv import find_dotenv, load_dotenv
 
 from . import periods
 from .config import get_config_class
@@ -39,16 +40,24 @@ def _instance_secret_key(app: Flask) -> str:
 
 
 def _ensure_admin(app: Flask) -> None:
-    """Create the single admin account on first run.
+    """Create the single admin account on first run, and keep its password in
+    sync with TODO_ADMIN_PASSWORD when that env var is set.
 
-    Password comes from TODO_ADMIN_PASSWORD, otherwise a random one is
-    generated and written to instance/admin_password.txt (chmod 600).
+    Without TODO_ADMIN_PASSWORD, a random password is generated on first run
+    and written to instance/admin_password.txt (chmod 600).
     """
     with app.app_context():
-        if User.query.count() > 0:
-            return
-        import getpass
         password = os.environ.get("TODO_ADMIN_PASSWORD")
+        user = User.query.filter_by(username="admin").first()
+
+        if user is not None:
+            if password:
+                if not user.check_password(password):
+                    user.set_password(password)
+                    db.session.commit()
+                    app.logger.info("Admin password updated from TODO_ADMIN_PASSWORD")
+            return
+
         generated = False
         if not password:
             password = secrets.token_urlsafe(14)
@@ -77,6 +86,11 @@ def _ensure_admin(app: Flask) -> None:
 
 def create_app(config_class=None) -> Flask:
     app = Flask(__name__)
+    # .env works for both `flask` CLI and gunicorn workers (CWD-based lookup:
+    # frame-based discovery breaks under gunicorn's import machinery).
+    dotenv_path = find_dotenv(usecwd=True)
+    if dotenv_path:
+        load_dotenv(dotenv_path, override=False)
     app.config.from_object(config_class or get_config_class())
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)

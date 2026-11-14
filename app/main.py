@@ -20,8 +20,8 @@ def dashboard():
 
     due_today = queries.due_groups(t, t).get(t, [])
     work_today = queries.work_groups(t, t).get(t, [])
-    week_due = queries.due_groups(t + dt.timedelta(days=1), week_end)
-    month_due = queries.due_groups(week_end + dt.timedelta(days=1), month_end)
+    week_due = sorted(queries.due_groups(t + dt.timedelta(days=1), week_end).items())
+    month_due = sorted(queries.due_groups(week_end + dt.timedelta(days=1), month_end).items())
 
     open_tasks = Task.query.filter_by(done=False).count()
     overdue = Task.query.filter(

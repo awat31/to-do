@@ -11,7 +11,7 @@
 
 <div class="cal-toolbar">
   <div class="kind-tabs">
-    {% for k in kinds %}
+    {% for k in kinds | reverse %}
       <a class="kind-tab {{ 'active' if k == kind }}" href="{{ url_for('calendarview.view', kind=k) }}">{{ k | capitalize }}</a>
     {% endfor %}
   </div>
