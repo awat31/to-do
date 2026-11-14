@@ -14,15 +14,16 @@
 <div class="cal-toolbar">
   <div class="kind-tabs">
     {% for k in kinds | reverse %}
-      <a class="kind-tab {{ 'active' if k == kind }}" href="{{ url_for('calendarview.view', kind=k) }}">{{ k | capitalize }}</a>
+      <a class="kind-tab {{ 'active' if k == kind }}"
+         href="{{ url_for('calendarview.view', kind=k, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">{{ k | capitalize }}</a>
     {% endfor %}
   </div>
   <div class="period-nav">
-    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.prev.value) }}">‹</a>
-    <a class="btn btn-ghost period-today" href="{{ url_for('calendarview.view', kind=kind, value=p.today.value) }}">Today</a>
-    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.next.value) }}">›</a>
+    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.prev.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">‹</a>
+    <a class="btn btn-ghost period-today" href="{{ url_for('calendarview.view', kind=kind, value=p.today.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">Today</a>
+    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.next.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">›</a>
   </div>
-  <div class="mode-tabs" title="Tick the sections you want to see">
+  <div class="mode-tabs" title="Select the sections you want to see">
     <a class="mode-tab {{ 'active' if due_sel else 'off' }}"
        href="{{ url_for('calendarview.view', kind=kind, value=p.value, due=(0 if due_sel else 1), work=(1 if work_sel else 0)) }}">Due</a>
     <a class="mode-tab {{ 'active' if work_sel else 'off' }}"
@@ -32,12 +33,15 @@
     <button type="button" id="jump-toggle" class="btn btn-soft" aria-haspopup="true" aria-expanded="false">📅 Jump to…</button>
     <div class="jump-pop" id="jump-pop" hidden>
       <form method="get" action="{{ url_for('calendarview.jump') }}" class="stack">
+        <input type="hidden" name="due" value="{{ 1 if due_sel else 0 }}">
+        <input type="hidden" name="work" value="{{ 1 if work_sel else 0 }}">
         <label class="lbl" for="jump-date">Pick a day</label>
-        <input type="date" id="jump-date" name="date" class="input input-date" value="{{ p.start.isoformat() }}"
-               onchange="this.form.submit()">
+        <input type="date" id="jump-date" name="date" class="input input-date js-autosubmit" value="{{ p.start.isoformat() }}">
         <button class="btn btn-primary btn-sm" type="submit">Go</button>
       </form>
       <form method="get" action="{{ url_for('calendarview.jump') }}" class="stack">
+        <input type="hidden" name="due" value="{{ 1 if due_sel else 0 }}">
+        <input type="hidden" name="work" value="{{ 1 if work_sel else 0 }}">
         <label class="lbl">…or a month / year</label>
         <div class="field-row">
           <select name="month" class="input">
@@ -57,7 +61,7 @@
 
 {% set next_url = url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) %}
 {% if not due_sel and not work_sel %}
-  <p class="empty big">Nothing selected — tick "Due" and/or "Working on" above to see tasks here.</p>
+  <p class="empty big">Nothing selected — turn on "Due" and/or "Working on" above to see tasks here.</p>
 {% endif %}
 
 {% if kind == 'day' %}

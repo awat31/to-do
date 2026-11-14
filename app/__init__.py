@@ -1,18 +1,17 @@
 """Application factory and shared extensions."""
-import logging
 import os
 import secrets
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
 from flask import Flask, render_template
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
-from dotenv import find_dotenv, load_dotenv
 
 from . import periods
 from .config import get_config_class
-from .models import User, db
+from .models import DeletedBatch, User, db
 from .palette import PROJECT_COLORS
 
 csrf = CSRFProtect()
@@ -20,6 +19,19 @@ migrate = Migrate()
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 
+
+
+def _asset_version(app: Flask) -> str:
+    """A cheap cache-buster based on the newest static-file mtime."""
+    root = Path(app.static_folder or "")
+    try:
+        newest = max(
+            (p.stat().st_mtime for p in root.rglob("*") if p.is_file()),
+            default=0,
+        )
+    except OSError:  # pragma: no cover
+        newest = 0
+    return str(int(newest))
 
 
 def _instance_secret_key(app: Flask) -> str:
@@ -50,12 +62,17 @@ def _ensure_admin(app: Flask) -> None:
         password = os.environ.get("TODO_ADMIN_PASSWORD")
         user = User.query.filter_by(username="admin").first()
 
-        if user is not None:
-            if password:
-                if not user.check_password(password):
+        if user is not None and password:
+            if not user.check_password(password):
                     user.set_password(password)
+                    user.clear_failures()
                     db.session.commit()
                     app.logger.info("Admin password updated from TODO_ADMIN_PASSWORD")
+                    if len(password) < 10:
+                        app.logger.warning(
+                            "TODO_ADMIN_PASSWORD is shorter than 10 characters; "
+                            "use a longer passphrase."
+                        )
             return
 
         generated = False
@@ -134,21 +151,71 @@ def create_app(config_class=None) -> Flask:
     def month_name(value):
         return periods.MONTH_NAMES[int(value) - 1]
 
+    @app.before_request
+    def reset_derived_caches():
+        """Derived task caches are request-scoped, even under test clients."""
+        db.session.info["todo_task_version"] = (
+            db.session.info.get("todo_task_version", 0) + 1
+        )
+
     @app.context_processor
     def inject_globals():
         from flask import session
+
+        batch_id = session.get("last_deleted_batch")
+        last_batch = db.session.get(DeletedBatch, batch_id) if batch_id else None
+        if batch_id and last_batch is None:
+            session.pop("last_deleted_batch", None)
         return {
+            "last_deleted_batch": last_batch,
             "PROJECT_COLORS": PROJECT_COLORS,
             "color_hex": lambda name: PROJECT_COLORS.get(name, PROJECT_COLORS["blue"]),
             "today": periods.today(),
             "kinds": periods.KINDS,
             "months": periods.MONTH_NAMES,
             "hide_completed": session.get("hide_completed", False),
+            "asset_version": _asset_version(app),
         }
+
+    @app.after_request
+    def security_headers(response):
+        """Conservative headers that do not require template rewrites."""
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault(
+            "Permissions-Policy", "geolocation=(), camera=(), microphone=()"
+        )
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+            "connect-src 'self'; form-action 'self'; base-uri 'self'; "
+            "frame-ancestors 'none'; object-src 'none'",
+        )
+        if response.mimetype == "text/html":
+            response.headers["Cache-Control"] = "no-store"
+        if app.config.get("SESSION_COOKIE_SECURE"):
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+    @app.errorhandler(400)
+    def bad_request(error):
+        return render_template(
+            "errors/error.html", code=400, message="That request was not valid."
+        ), 400
 
     @app.errorhandler(404)
     def not_found(error):
         return render_template("errors/error.html", code=404, message="Page not found."), 404
+
+    @app.errorhandler(413)
+    def too_large(error):
+        return render_template(
+            "errors/error.html", code=413, message="That text is too large to save."
+        ), 413
 
     @app.errorhandler(500)
     def server_error(error):
@@ -166,6 +233,15 @@ def create_app(config_class=None) -> Flask:
                 "(the systemd service does this automatically)."
             )
         else:
-            _ensure_admin(app)
+            # During `flask db upgrade` the app is imported before the schema
+            # matches the models; tolerate that and sync on the next start.
+            from sqlalchemy.exc import OperationalError
+
+            try:
+                _ensure_admin(app)
+            except OperationalError:
+                app.logger.warning(
+                    "User table is out of date; run `flask --app wsgi db upgrade`."
+                )
 
     return app

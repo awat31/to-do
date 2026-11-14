@@ -1,12 +1,24 @@
 """Projects: notebook pages that tasks can be linked to."""
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import login_required
 from flask_wtf.csrf import validate_csrf
+from sqlalchemy import func
 from werkzeug.exceptions import BadRequest
 
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
+from .queries import filter_task_tree, prepare_tasks
+from .utils import flash_form_errors
 
 bp = Blueprint("projects", __name__, url_prefix="/projects")
 
@@ -15,7 +27,15 @@ bp = Blueprint("projects", __name__, url_prefix="/projects")
 @login_required
 def index():
     projects = Project.query.order_by(Project.name).all()
-    return render_template("projects/index.html", projects=projects, delete_form=DeleteForm())
+    counts = dict(
+        db.session.query(Task.project_id, func.count(Task.id))
+        .filter(Task.project_id.isnot(None))
+        .group_by(Task.project_id)
+        .all()
+    )
+    return render_template(
+        "projects/index.html", projects=projects, counts=counts, delete_form=DeleteForm()
+    )
 
 
 def _color_choices():
@@ -40,9 +60,14 @@ def create():
 @login_required
 def detail(project_id: int):
     project = Project.query.get_or_404(project_id)
+    prepare_tasks()
+    roots = project.root_tasks.all()
+    if session.get("hide_completed", False):
+        roots = filter_task_tree(roots, hide_done=True)
     return render_template(
         "projects/detail.html",
         project=project,
+        roots=roots,
         task_form=QuickTaskForm(),
         delete_form=DeleteForm(),
     )
@@ -82,8 +107,17 @@ def notes(project_id: int):
         validate_csrf(request.headers.get("X-CSRFToken", ""))
     except BadRequest:
         return {"ok": False, "error": "bad csrf"}, 400
-    body = request.get_json(silent=True) or {}
-    project.notes = (body.get("notes") or "")[:500_000]
+    body = request.get_json(silent=True)
+    token = request.headers.get("X-CSRFToken", "")
+    if isinstance(body, dict):
+        token = token or body.get("csrf_token", "")
+    try:
+        validate_csrf(token)
+    except BadRequest:
+        return {"ok": False, "error": "bad csrf"}, 400
+    if not isinstance(body, dict) or not isinstance(body.get("notes"), str):
+        return {"ok": False, "error": "notes must be a string"}, 400
+    project.notes = body["notes"][:current_app.config["PROJECT_NOTES_LIMIT"]]
     db.session.commit()
     return {"ok": True}
 
@@ -98,12 +132,20 @@ def add_task(project_id: int):
     existing_id = request.form.get("existing_task_id", type=int)
     if existing_id:
         task = Task.query.get_or_404(existing_id)
-        if task.project_id == project.id:
+        if task.project_id == project.id and task.parent_id is None:
             flash(f"{task.title!r} is already in this project.", "error")
         else:
-            task.project_id = project.id
+            moved = task.descendant_objects()
+            for item in moved:
+                item.project_id = project.id
+            # A picked sub-task is promoted to a project root, otherwise it
+            # would remain hidden under a parent in another project.
+            if task.parent_id is not None:
+                task.parent_id = None
+                task.position = task.next_sibling_position()
             db.session.commit()
-            flash(f"Added {task.title!r} to this project.", "ok")
+            suffix = f" and {len(moved) - 1} sub-task(s)" if len(moved) > 1 else ""
+            flash(f"Added {task.title!r}{suffix} to this project.", "ok")
         return redirect(url_for("projects.detail", project_id=project.id))
 
     form = QuickTaskForm()
@@ -113,4 +155,6 @@ def add_task(project_id: int):
         db.session.add(task)
         db.session.commit()
         flash("Task added to project.", "ok")
+    else:
+        flash_form_errors(form)
     return redirect(url_for("projects.detail", project_id=project.id))

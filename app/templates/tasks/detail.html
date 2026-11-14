@@ -6,6 +6,9 @@
   <h1 class="task-head">
     <span class="{{ 'strikethrough' if task.done }}">{{ task.title }}</span>
     {{ progress_bar(task.progress()) }}
+    {% if task.recurrence and task.recurrence != 'none' %}
+      <span class="chip chip-repeat">↻ {{ task.recurrence }}</span>
+    {% endif %}
   </h1>
   <div class="head-actions">
     <a class="btn btn-soft" href="{{ url_for('tasks.edit', task_id=task.id) }}">Edit</a>
@@ -65,6 +68,7 @@
           <li>
             <span>{{ td.date | human_date }}</span>
             <form method="post" action="{{ url_for('tasks.remove_work_date', task_id=task.id, td_id=td.id) }}" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-ghost btn-sm" type="submit" title="Remove" data-confirm="Remove this work date?">✕</button>
             </form>
           </li>
@@ -86,6 +90,32 @@
         <button class="btn btn-primary" type="submit">Add work date(s)</button>
       </form>
       <p class="hint">Tip: add several separate dates one at a time for a non-consecutive schedule. Use the calendar cards' ＋ box to add dates from anywhere.</p>
+    </section>
+
+    <section class="section side-card">
+      <h2>Sub-tree actions</h2>
+      <div class="stack">
+        <form method="post" action="{{ url_for('tasks.complete_subtree', task_id=task.id) }}"
+              data-confirm="Mark this task and every sub-task as done?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-soft btn-sm" type="submit">Mark whole subtree done</button>
+        </form>
+        <form method="post" action="{{ url_for('tasks.reassign_subtree', task_id=task.id) }}" class="field-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="project_id" class="input">
+            <option value="">— No project —</option>
+            {% for project in projects %}
+              <option value="{{ project.id }}" {{ 'selected' if task.project_id == project.id }}>{{ project.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-soft btn-sm" type="submit">Move subtree</button>
+        </form>
+        <form method="post" action="{{ url_for('tasks.reschedule_subtree', task_id=task.id) }}" class="field-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="date" name="due_date" class="input input-date" value="{{ task.due_date.isoformat() if task.due_date else '' }}">
+          <button class="btn btn-soft btn-sm" type="submit">Set due for subtree</button>
+        </form>
+      </div>
     </section>
 
     {% if task.project %}

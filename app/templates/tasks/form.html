@@ -15,12 +15,20 @@
   </div>
   <div class="field">
     {{ form.due_date.label }} {{ form.due_date(class="input input-date") }}
+    {% for e in form.due_date.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </div>
+  <div class="field">
+    {{ form.recurrence.label }} {{ form.recurrence(class="input") }}
+    {% for e in form.recurrence.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    <span class="hint">A repeat creates the next occurrence when this task is completed. Requires a due date.</span>
   </div>
   <div class="field">
     {{ form.project_id.label }} {{ form.project_id(class="input") }}
+    {% for e in form.project_id.errors %}<span class="err">{{ e }}</span>{% endfor %}
   </div>
   <div class="field">
     {{ form.parent_id.label }} {{ form.parent_id(class="input") }}
+    {% for e in form.parent_id.errors %}<span class="err">{{ e }}</span>{% endfor %}
   </div>
   <div class="form-actions">
     <button class="btn btn-primary" type="submit">Save task</button>

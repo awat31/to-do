@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}To-Do{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v=asset_version) }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <meta name="theme-color" content="#faf6ec">
 </head>
 <body>
 <header class="topbar">
@@ -15,8 +17,9 @@
     <nav class="nav">
       <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}">Dashboard</a>
       <a href="{{ url_for('calendarview.view', kind='day') }}" class="{{ 'active' if request.blueprint == 'calendarview' }}">Calendar</a>
-      <a href="{{ url_for('tasks.index') }}" class="{{ 'active' if request.blueprint == 'tasks' }}">Tasks</a>
+      <a href="{{ url_for('tasks.index') }}" class="{{ 'active' if request.blueprint == 'tasks' and request.endpoint != 'tasks.trash' }}">Tasks</a>
       <a href="{{ url_for('projects.index') }}" class="{{ 'active' if request.blueprint == 'projects' }}">Projects</a>
+      <a href="{{ url_for('tasks.trash') }}" class="{{ 'active' if request.endpoint == 'tasks.trash' }}">Trash</a>
     </nav>
     <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -26,6 +29,16 @@
 </header>
 
 <main class="page">
+  {% if last_deleted_batch %}
+    <div class="undo-bar">
+      <span>Deleted <strong>{{ last_deleted_batch.summary }}</strong>.</span>
+      <form method="post" action="{{ url_for('tasks.restore', batch_id=last_deleted_batch.id) }}" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-soft" type="submit">Undo</button>
+      </form>
+      <a class="btn btn-sm btn-ghost" href="{{ url_for('tasks.trash') }}">Trash</a>
+    </div>
+  {% endif %}
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       <div class="flashes">
@@ -38,6 +51,6 @@
   {% block content %}{% endblock %}
 </main>
 
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js', v=asset_version) }}"></script>
 </body>
 </html>

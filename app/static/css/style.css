@@ -224,7 +224,43 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   content: ""; display: block; width: 2px; margin-left: 1rem; height: 0.5rem;
   background: var(--line);
 }
-.tree-row { margin-bottom: 0.45rem; }
+.tree-row {
+  margin-bottom: 0.45rem; display: flex; align-items: flex-start; gap: 0.15rem;
+  border-radius: var(--radius); transition: box-shadow 0.12s, opacity 0.12s;
+}
+.tree-row > .task-card { flex: 1; min-width: 0; }
+.drag-handle {
+  color: #cfc7b5; cursor: grab; padding: 0.7rem 0.1rem 0 0; font-size: 1rem;
+  user-select: none; line-height: 1;
+}
+.tree-row:hover > .drag-handle { color: var(--ink-soft); }
+.tree-row.dragging { opacity: 0.35; }
+.tree-row.drop-target { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ---- task filters ---- */
+.filter-bar {
+  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.6rem 0.75rem; margin-bottom: 1.25rem; box-shadow: var(--shadow);
+}
+.filter-bar .input { width: auto; }
+.filter-bar input[type="search"] { flex: 1; min-width: 180px; }
+.chip-repeat { background: #ede9fe; border-color: #ddd6fe; color: #6d28d9; }
+
+/* ---- undo bar / trash ---- */
+.undo-bar {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+  padding: 0.5rem 0.8rem; border-radius: 10px; margin-bottom: 1rem; font-size: 0.9rem;
+}
+.trash-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.trash-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.75rem 1rem; box-shadow: var(--shadow); flex-wrap: wrap;
+}
+.trash-item .muted { display: block; font-size: 0.75rem; }
+.check-line { display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; color: var(--ink-soft); }
 
 /* ---- calendar ---- */
 .cal-toolbar {

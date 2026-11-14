@@ -1,14 +1,29 @@
 """WTForms used across the app."""
 from flask_wtf import FlaskForm
-from wtforms import DateField, IntegerField, PasswordField, SelectField, StringField, TextAreaField
-from wtforms.validators import DataRequired, Length, NumberRange, Optional, ValidationError
+from wtforms import (
+    BooleanField,
+    DateField,
+    PasswordField,
+    SelectField,
+    StringField,
+    TextAreaField,
+)
+from wtforms.validators import DataRequired, Length, Optional
 
 MAX_WORK_RANGE_DAYS = 90
+
+RECURRENCE_CHOICES = (
+    ("none", "Does not repeat"),
+    ("daily", "Every day"),
+    ("weekly", "Every week"),
+    ("monthly", "Every month"),
+)
 
 
 class LoginForm(FlaskForm):
     username = StringField("Username", validators=(DataRequired(), Length(max=80)))
     password = PasswordField("Password", validators=(DataRequired(),))
+    remember = BooleanField("Keep me signed in on this device")
 
 
 class ProjectForm(FlaskForm):
@@ -20,8 +35,16 @@ class TaskForm(FlaskForm):
     title = StringField("Title", validators=(DataRequired(), Length(max=255)))
     notes = TextAreaField("Notes", validators=(Optional(),))
     due_date = DateField("Due date", validators=(Optional(),), format="%Y-%m-%d")
+    recurrence = SelectField("Repeat", choices=RECURRENCE_CHOICES, default="none")
     project_id = SelectField("Project", coerce=int, validators=(Optional(),))
     parent_id = SelectField("Parent task", coerce=int, validators=(Optional(),))
+
+    def validate(self, *args, **kwargs) -> bool:
+        ok = super().validate(*args, **kwargs)
+        if ok and self.recurrence.data not in ("none", None) and self.due_date.data is None:
+            self.recurrence.errors.append("Give the task a due date to repeat it.")
+            return False
+        return ok
 
 
 class WorkDateForm(FlaskForm):
@@ -51,10 +74,6 @@ class DueDateForm(FlaskForm):
     due_date = DateField("Due date", validators=(Optional(),), format="%Y-%m-%d")
 
 
-class NotesForm(FlaskForm):
-    notes = TextAreaField("Notes")
-
-
 class QuickTaskForm(FlaskForm):
     """Minimal inline 'add a task' form (used on project pages and sub-tasks)."""
     title = StringField("Title", validators=(DataRequired(), Length(max=255)))
@@ -62,7 +81,3 @@ class QuickTaskForm(FlaskForm):
 
 class DeleteForm(FlaskForm):
     pass
-
-
-class PeriodJumpForm(FlaskForm):
-    value = StringField(validators=(DataRequired(),))

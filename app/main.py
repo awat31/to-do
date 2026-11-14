@@ -1,11 +1,12 @@
 """Dashboard: what's due and what to work on today, plus the week ahead."""
 import datetime as dt
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask import Blueprint, render_template, request, session, url_for
 from flask_login import login_required
 
-from . import queries
+from . import periods, queries
 from .models import Task, TaskDate, db
+from .utils import redirect_back
 
 bp = Blueprint("main", __name__)
 
@@ -18,7 +19,7 @@ def _prune_empty(pairs):
 @bp.route("/")
 @login_required
 def dashboard():
-    t = dt.date.today()
+    t = periods.today()
     hide = session.get("hide_completed", False)
     week_end = t + dt.timedelta(days=6)
     month_end = t.replace(day=28) + dt.timedelta(days=4)
@@ -43,15 +44,17 @@ def dashboard():
         week_due = _prune_empty([(d, [x for x in ts if not x.done]) for d, ts in week_due])
         month_due = _prune_empty([(d, [x for x in ts if not x.done]) for d, ts in month_due])
 
+    queries.prepare_tasks()
+
     open_tasks = Task.query.filter_by(done=False).count()
     overdue = Task.query.filter(
-        Task.done == False,  # noqa: E712
-        Task.due_date != None,  # noqa: E711
+        Task.done == False,
+        Task.due_date != None,
         Task.due_date < t,
     ).count()
     unscheduled = Task.query.filter(
-        Task.done == False,  # noqa: E712
-        Task.due_date == None,  # noqa: E711
+        Task.done == False,
+        Task.due_date == None,
         ~Task.id.in_(db.session.query(TaskDate.task_id)),
     ).count()
 
@@ -75,5 +78,4 @@ def dashboard():
 def set_hide_completed():
     """Toggle the 'hide completed tasks' preference (stored in the session)."""
     session["hide_completed"] = request.form.get("hide") == "1"
-    nxt = request.form.get("next")
-    return redirect(nxt or url_for(".dashboard"))
+    return redirect_back(request.form.get("next"), url_for(".dashboard"))

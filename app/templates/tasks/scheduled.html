@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% from "_macros.html" import task_card with context %}
+{% from "_prefs.html" import hide_completed_toggle with context %}
 {% block title %}Scheduled · To-Do{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Overdue &amp; working on today</h1></div>
+<div class="page-head">
+  <h1>Overdue &amp; working on today</h1>
+  {{ hide_completed_toggle(request.full_path) }}
+</div>
 <section class="section">
   <h2><span class="dot dot-due"></span>Overdue</h2>
   {% if overdue %}

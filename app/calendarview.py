@@ -7,13 +7,23 @@ group, tasks are listed under their exact dates.
 """
 import datetime as dt
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import login_required
 from flask_wtf.csrf import validate_csrf
 from werkzeug.exceptions import BadRequest
 
 from . import periods, queries
 from .models import Task, TaskDate, db
+from .utils import redirect_back
 
 bp = Blueprint("calendarview", __name__, url_prefix="/calendar")
 
@@ -32,6 +42,12 @@ def _selection() -> tuple[bool, bool]:
     if "due" not in args and "work" not in args:
         return True, True
     return args.get("due") == "1", args.get("work") == "1"
+
+
+def _sel_kwargs() -> dict:
+    """due/work query arguments mirroring the current selection."""
+    due_sel, work_sel = _selection()
+    return {"due": 1 if due_sel else 0, "work": 1 if work_sel else 0}
 
 
 def _keyfn(kind: str):
@@ -89,6 +105,7 @@ def view(kind: str, value: str | None):
         work_break = _strip_done(work_break)
     due_count = sum(len(tasks) for _, days in due_break for _, tasks in days)
     work_count = sum(len(tasks) for _, days in work_break for _, tasks in days)
+    queries.prepare_tasks()
 
     return render_template(
         "calendar.html",
@@ -106,13 +123,14 @@ def jump():
     Precedence: a picked date -> day view; otherwise month+year -> month
     view; otherwise just a year -> year view.
     """
+    sel = _sel_kwargs()
     raw = (request.args.get("date") or "").strip()
     if raw:
         try:
             d = periods.parse_day(raw)
         except ValueError:
             abort(400)
-        return redirect(url_for(".view", kind="day", value=d.isoformat()))
+        return redirect(url_for(".view", kind="day", value=d.isoformat(), **sel))
 
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
@@ -121,10 +139,10 @@ def jump():
             d = dt.date(year, month, 1)
         except ValueError:
             abort(400)
-        return redirect(url_for(".view", kind="month", value=periods.month_value(d)))
+        return redirect(url_for(".view", kind="month", value=periods.month_value(d), **sel))
     if year:
-        return redirect(url_for(".view", kind="year", value=f"{year:04d}"))
-    return redirect(url_for(".view", kind="day"))
+        return redirect(url_for(".view", kind="year", value=f"{year:04d}", **sel))
+    return redirect(url_for(".view", kind="day", **sel))
 
 
 @bp.route("/quick-add-date/<int:task_id>", methods=("POST",))
@@ -147,11 +165,18 @@ def quick_add_date(task_id: int):
             d = periods.parse_day(raw)
         except ValueError:
             flash(f"Could not read date {raw!r}; pick one from the picker.", "error")
-            return redirect(request.form.get("next") or url_for("calendarview.view", kind="day"))
+            return redirect_back(
+                request.form.get("next"), url_for("calendarview.view", kind="day")
+            )
     else:
         d = periods.today()
-    if not TaskDate.query.filter_by(task_id=task.id, date=d).first():
+    label = d.strftime("%a %-d %b %Y")
+    if TaskDate.query.filter_by(task_id=task.id, date=d).first():
+        flash(f"{task.title!r} is already scheduled for {label}.", "ok")
+    else:
         db.session.add(TaskDate(task_id=task.id, date=d))
         db.session.commit()
-        flash(f"Added {d.strftime('%a %-d %b %Y')} as a work-on date for {task.title!r}.", "ok")
-    return redirect(request.form.get("next") or url_for("calendarview.view", kind="day"))
+        flash(f"Added {label} as a work-on date for {task.title!r}.", "ok")
+    return redirect_back(
+        request.form.get("next"), url_for("calendarview.view", kind="day")
+    )

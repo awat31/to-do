@@ -37,16 +37,18 @@
         {% endfor %}
         {% if task.work_dates | length > 4 %}<span class="chip">+{{ task.work_dates | length - 4 }}</span>{% endif %}
       {% endif %}
+      {% if task.recurrence and task.recurrence != 'none' %}
+        <span class="chip chip-repeat">↻ {{ task.recurrence }}</span>
+      {% endif %}
       {{ progress_bar(task.progress()) }}
     </div>
   </div>
   <form method="post" action="{{ url_for('calendarview.quick_add_date', task_id=task.id) }}" class="inline-form quick-add">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-    <input type="date" name="date" class="input input-date-sm" aria-label="Add work-on date"
+    <input type="date" name="date" class="input input-date-sm js-autosubmit" aria-label="Add work-on date"
            value="{{ default_date.isoformat() if default_date else '' }}"
-           title="{{ 'Add ' ~ (default_date | human_date) if default_date else 'Add a work-on date' }}"
-           onchange="this.form.submit()">
+           title="{{ 'Add ' ~ (default_date | human_date) if default_date else 'Add a work-on date' }}">
     <button class="btn btn-sm btn-soft" type="submit" title="Add this work-on date">＋</button>
   </form>
 </div>
@@ -56,10 +58,11 @@
 <ul class="task-tree">
   {% for task in tasks recursive %}
   <li>
-    <div class="tree-row">
+    <div class="tree-row js-drag-row" draggable="true" data-task-id="{{ task.id }}">
+      <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
       {{ task_card(task, next_url=next_url) }}
     </div>
-    {% set kids = task._filtered_children if task._filtered_children is defined else task.children %}
+    {% set kids = task._filtered_children if task._filtered_children is defined else (task._children_cache if task._children_cache is defined else task.children) %}
     {% if kids %}
       {{ loop(kids | list) }}
     {% endif %}
