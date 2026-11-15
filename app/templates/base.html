@@ -4,16 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="{{ 'dark' if night_mode else 'light' }}">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>{% block title %}To-Do{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v=asset_version) }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
-  <meta name="theme-color" content="#faf6ec">
+  <meta name="theme-color" content="{{ '#0b1220' if night_mode else '#faf6ec' }}">
 </head>
-<body>
+<body class="{{ 'night-mode' if night_mode }}"
+      style="--accent: {{ highlight_color }}; --accent-text: {{ highlight_text }};">
 <header class="topbar">
   <div class="topbar-inner">
     <a class="brand" href="{{ url_for('main.dashboard') }}"><span class="brand-dot"></span>To&#8209;Do</a>

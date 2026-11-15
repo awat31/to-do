@@ -1,11 +1,12 @@
 """Application factory and shared extensions."""
 import os
+import re
 import secrets
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 from flask import Flask, render_template, send_from_directory
-from flask_login import LoginManager
+from flask_login import LoginManager, current_user
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
 from sqlalchemy.exc import IntegrityError
@@ -20,6 +21,8 @@ migrate = Migrate()
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 
+_DEFAULT_HIGHLIGHT = "#f97316"
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
 
 
 def _asset_version(app: Flask) -> str:
@@ -33,6 +36,17 @@ def _asset_version(app: Flask) -> str:
     except OSError:  # pragma: no cover
         newest = 0
     return str(int(newest))
+
+
+def _appearance_colors(value: str | None) -> tuple[str, str]:
+    """Return a safe highlight and a readable foreground for filled accents."""
+    color = value.lower() if isinstance(value, str) and _HEX_COLOR.fullmatch(value) else _DEFAULT_HIGHLIGHT
+    channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    luminance = sum(
+        weight * (channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4)
+        for weight, channel in zip((0.2126, 0.7152, 0.0722), channels)
+    )
+    return color, "#000000" if luminance > 0.179 else "#ffffff"
 
 
 def _instance_secret_key(app: Flask) -> str:
@@ -164,6 +178,10 @@ def create_app(config_class=None) -> Flask:
     def inject_globals():
         from flask import session
 
+        user = current_user if current_user.is_authenticated else None
+        highlight_color, highlight_text = _appearance_colors(
+            user.highlight_color if user else None
+        )
         batch_id = session.get("last_deleted_batch")
         last_batch = db.session.get(DeletedBatch, batch_id) if batch_id else None
         if batch_id and last_batch is None:
@@ -177,6 +195,9 @@ def create_app(config_class=None) -> Flask:
             "months": periods.MONTH_NAMES,
             "hide_completed": session.get("hide_completed", False),
             "asset_version": _asset_version(app) if app.debug else app.config["ASSET_VERSION"],
+            "highlight_color": highlight_color,
+            "highlight_text": highlight_text,
+            "night_mode": bool(user and user.night_mode),
         }
 
     @app.after_request

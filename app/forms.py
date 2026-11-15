@@ -8,7 +8,7 @@ from wtforms import (
     StringField,
     TextAreaField,
 )
-from wtforms.validators import DataRequired, EqualTo, Length, Optional
+from wtforms.validators import DataRequired, EqualTo, Length, Optional, Regexp
 
 MAX_WORK_RANGE_DAYS = 90
 
@@ -64,6 +64,17 @@ class DisplayNameForm(FlaskForm):
         filters=(_strip,),
         validators=(DataRequired(), Length(max=80)),
     )
+
+
+class AppearanceForm(FlaskForm):
+    highlight_color = StringField(
+        "Highlight colour",
+        validators=(
+            DataRequired(),
+            Regexp(r"^#[0-9a-fA-F]{6}$", message="Choose a valid colour."),
+        ),
+    )
+    night_mode = BooleanField("Night mode")
 
 
 class DeleteAccountForm(FlaskForm):

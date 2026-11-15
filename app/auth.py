@@ -16,6 +16,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import IntegrityError
 
 from .forms import (
+    AppearanceForm,
     ChangePasswordForm,
     DeleteAccountForm,
     DisplayNameForm,
@@ -109,6 +110,7 @@ def login():
 def account():
     form = ChangePasswordForm()
     display_form = DisplayNameForm(obj=current_user)
+    appearance_form = AppearanceForm(obj=current_user)
     delete_form = DeleteAccountForm()
     if form.validate_on_submit():
         if not current_user.check_password(form.current_password.data):
@@ -123,8 +125,29 @@ def account():
         "auth/account.html",
         form=form,
         display_form=display_form,
+        appearance_form=appearance_form,
         delete_form=delete_form,
     )
+
+
+@bp.route("/account/appearance", methods=("POST",))
+@login_required
+def update_appearance():
+    form = AppearanceForm()
+    if form.validate_on_submit():
+        current_user.highlight_color = form.highlight_color.data.lower()
+        current_user.night_mode = form.night_mode.data
+        db.session.commit()
+        flash("Appearance settings updated.", "ok")
+        return redirect(url_for("auth.account"))
+
+    return render_template(
+        "auth/account.html",
+        form=ChangePasswordForm(),
+        display_form=DisplayNameForm(obj=current_user),
+        appearance_form=form,
+        delete_form=DeleteAccountForm(),
+    ), 400
 
 
 @bp.route("/account/display-name", methods=("POST",))
@@ -141,6 +164,7 @@ def update_display_name():
         "auth/account.html",
         form=ChangePasswordForm(),
         display_form=form,
+        appearance_form=AppearanceForm(obj=current_user),
         delete_form=DeleteAccountForm(),
     ), 400
 
@@ -242,6 +266,7 @@ def delete_account():
         "auth/account.html",
         form=ChangePasswordForm(),
         display_form=DisplayNameForm(obj=current_user),
+        appearance_form=AppearanceForm(obj=current_user),
         delete_form=form,
     ), 400
 
