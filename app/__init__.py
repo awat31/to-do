@@ -53,39 +53,25 @@ def _instance_secret_key(app: Flask) -> str:
 
 
 def _ensure_admin(app: Flask) -> None:
-    """Create the single admin account on first run, and keep its password in
-    sync with TODO_ADMIN_PASSWORD when that env var is set.
+    """Seed the initial admin account when the database has no users.
 
-    Without TODO_ADMIN_PASSWORD, a random password is generated on first run
+    Multi-user installs create further accounts through the sign-up page.
+    Existing passwords are never overwritten on restart: an admin who changes
+    their password in the User page must keep it.
+
+    Without TODO_ADMIN_PASSWORD, a random first-run password is generated
     and written to instance/admin_password.txt (chmod 600).
     """
     with app.app_context():
-        password = os.environ.get("TODO_ADMIN_PASSWORD")
-        user = User.query.filter_by(username="admin").first()
-
-        if user is not None and password:
-            if not user.check_password(password):
-                user.set_password(password)
-                user.clear_failures()
-                db.session.commit()
-                app.logger.info("Admin password updated from TODO_ADMIN_PASSWORD")
-                if len(password) < 10:
-                    app.logger.warning(
-                        "TODO_ADMIN_PASSWORD is shorter than 10 characters; "
-                        "use a longer passphrase."
-                    )
-            elif user.is_locked():
-                # The configured password is authoritative: an operator who
-                # restarts the service should not stay locked out.
-                user.clear_failures()
-                db.session.commit()
+        if User.query.first() is not None:
             return
 
+        password = os.environ.get("TODO_ADMIN_PASSWORD")
         generated = False
         if not password:
             password = secrets.token_urlsafe(14)
             generated = True
-        user = User(username="admin")
+        user = User(username="admin", is_admin=True)
         user.set_password(password)
         db.session.add(user)
         try:

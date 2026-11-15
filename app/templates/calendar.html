@@ -6,7 +6,7 @@
 <div class="page-head">
   <h1>{{ p.label }}</h1>
   <div class="head-actions">
-    {{ hide_completed_toggle(url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0))) }}
+    {{ hide_completed_toggle(url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=layout_mode)) }}
     <a class="btn btn-primary" href="{{ url_for('tasks.create') }}">New task</a>
   </div>
 </div>
@@ -15,26 +15,37 @@
   <div class="kind-tabs">
     {% for k in kinds | reverse %}
       <a class="kind-tab {{ 'active' if k == kind }}"
-         href="{{ url_for('calendarview.view', kind=k, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">{{ k | capitalize }}</a>
+         href="{{ url_for('calendarview.view', kind=k, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=('calendar' if kind == 'day' else layout_mode)) }}">{{ k | capitalize }}</a>
     {% endfor %}
   </div>
   <div class="period-nav">
-    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.prev.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">‹</a>
-    <a class="btn btn-ghost period-today" href="{{ url_for('calendarview.view', kind=kind, value=p.today.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">Today</a>
-    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.next.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">›</a>
+    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.prev.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=layout_mode) }}">‹</a>
+    <a class="btn btn-ghost period-today" href="{{ url_for('calendarview.view', kind=kind, value=p.today.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=layout_mode) }}">Today</a>
+    <a class="btn btn-soft" href="{{ url_for('calendarview.view', kind=kind, value=p.next.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=layout_mode) }}">›</a>
   </div>
   <div class="mode-tabs" title="Select the sections you want to see">
     <a class="mode-tab {{ 'active' if due_sel else 'off' }}"
-       href="{{ url_for('calendarview.view', kind=kind, value=p.value, due=(0 if due_sel else 1), work=(1 if work_sel else 0)) }}">Due</a>
+       href="{{ url_for('calendarview.view', kind=kind, value=p.value, due=(0 if due_sel else 1), work=(1 if work_sel else 0), layout=layout_mode) }}">Due</a>
     <a class="mode-tab {{ 'active' if work_sel else 'off' }}"
-       href="{{ url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(0 if work_sel else 1)) }}">Working on</a>
+       href="{{ url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(0 if work_sel else 1), layout=layout_mode) }}">Working on</a>
   </div>
+  {% if kind in ('week', 'month', 'year') %}
+  <div class="mode-tabs calendar-layout-toggle" role="group" aria-label="Calendar layout">
+    <a class="mode-tab {{ 'active' if layout_mode == 'list' }}"
+       aria-current="{{ 'page' if layout_mode == 'list' else 'false' }}"
+       href="{{ url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout='list') }}">List</a>
+    <a class="mode-tab {{ 'active' if layout_mode == 'calendar' }}"
+       aria-current="{{ 'page' if layout_mode == 'calendar' else 'false' }}"
+       href="{{ url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout='calendar') }}">Calendar</a>
+  </div>
+  {% endif %}
   <div class="jump-wrap">
     <button type="button" id="jump-toggle" class="btn btn-soft" aria-haspopup="true" aria-expanded="false">📅 Jump to…</button>
     <div class="jump-pop" id="jump-pop" hidden>
       <form method="get" action="{{ url_for('calendarview.jump') }}" class="stack">
         <input type="hidden" name="due" value="{{ 1 if due_sel else 0 }}">
         <input type="hidden" name="work" value="{{ 1 if work_sel else 0 }}">
+        {% if kind != 'day' %}<input type="hidden" name="layout" value="{{ layout_mode }}">{% endif %}
         <label class="lbl" for="jump-date">Pick a day</label>
         <input type="date" id="jump-date" name="date" class="input input-date js-autosubmit" value="{{ p.start.isoformat() }}">
         <button class="btn btn-primary btn-sm" type="submit">Go</button>
@@ -42,6 +53,7 @@
       <form method="get" action="{{ url_for('calendarview.jump') }}" class="stack">
         <input type="hidden" name="due" value="{{ 1 if due_sel else 0 }}">
         <input type="hidden" name="work" value="{{ 1 if work_sel else 0 }}">
+        {% if kind != 'day' %}<input type="hidden" name="layout" value="{{ layout_mode }}">{% endif %}
         <label class="lbl">…or a month / year</label>
         <div class="field-row">
           <select name="month" class="input">
@@ -59,12 +71,13 @@
   </div>
 </div>
 
-{% set next_url = url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) %}
+{% set next_url = url_for('calendarview.view', kind=kind, value=p.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=layout_mode) %}
 {% if not due_sel and not work_sel %}
   <p class="empty big">Nothing selected — turn on "Due" and/or "Working on" above to see tasks here.</p>
 {% endif %}
 
-{% if month_grid and (due_sel or work_sel) %}
+{% if layout_mode == 'calendar' and (due_sel or work_sel) %}
+  {% if kind == 'month' and month_grid %}
   <section class="month-grid-wrap" aria-label="Month at a glance">
     <div class="month-grid">
       {% for wd in month_grid.weekdays %}
@@ -89,8 +102,60 @@
       {% endfor %}
     </div>
   </section>
+  {% elif kind == 'week' and week_grid %}
+  <section class="week-grid-wrap" aria-label="Week calendar">
+    <div class="week-grid">
+      {% for cell in week_grid.cells %}
+        <a class="week-cell{{ ' is-today' if cell.is_today }}"
+           href="{{ url_for('calendarview.view', kind='day', value=cell.date.isoformat(), due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}"
+           aria-label="{{ cell.date | human_date }}{% if cell.due %}, {{ cell.due | length }} due{% endif %}{% if cell.work %}, {{ cell.work | length }} working on{% endif %}">
+          <span class="week-date"><strong>{{ cell.date.strftime('%a') }}</strong>{{ cell.date.day }}</span>
+          <span class="week-counts">
+            {% if cell.due %}<span class="month-pill month-due">{{ cell.due | length }} due</span>{% endif %}
+            {% if cell.work %}<span class="month-pill month-work">{{ cell.work | length }} work</span>{% endif %}
+          </span>
+          {% for task in cell.tasks[:6] %}
+            <span class="week-task">{{ task.title }}</span>
+          {% endfor %}
+          {% if cell.tasks | length > 6 %}
+            <span class="month-more">+{{ cell.tasks | length - 6 }} more</span>
+          {% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% elif kind == 'year' and year_months %}
+  <section class="year-calendar" aria-label="Year calendar">
+    {% for mini in year_months %}
+      <article class="year-month">
+        <h2><a href="{{ url_for('calendarview.view', kind='month', value=mini.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}">{{ months[mini.month - 1] }}</a></h2>
+        <div class="month-grid year-month-grid">
+          {% for wd in mini.grid.weekdays %}
+            <div class="month-weekday" aria-hidden="true">{{ wd[0] }}</div>
+          {% endfor %}
+          {% for cell in mini.grid.cells %}
+            {% if cell.in_month %}
+              <a class="month-cell year-month-cell{{ ' is-today' if cell.is_today }}"
+                 href="{{ url_for('calendarview.view', kind='month', value=mini.value, due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}"
+                 aria-label="{{ cell.date | human_date }}{% if cell.due %}, {{ cell.due | length }} due{% endif %}{% if cell.work %}, {{ cell.work | length }} working on{% endif %}">
+                <span class="month-day">{{ cell.date.day }}</span>
+                <span class="year-month-marks">
+                  {% if cell.due %}<span class="year-month-mark year-mark-due">{{ cell.due | length }}</span>{% endif %}
+                  {% if cell.work %}<span class="year-month-mark year-mark-work">{{ cell.work | length }}</span>{% endif %}
+                </span>
+              </a>
+            {% else %}
+              <span class="month-cell year-month-cell is-outside" aria-hidden="true"></span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+  {% endif %}
 {% endif %}
 
+{% if kind == 'day' or layout_mode == 'list' %}
 {% if kind == 'day' %}
   {% if due_sel %}
   <section class="section">
@@ -136,5 +201,6 @@
     {% endfor %}
   </section>
   {% endif %}
+{% endif %}
 {% endif %}
 {% endblock %}

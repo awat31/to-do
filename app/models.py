@@ -4,9 +4,9 @@ import sqlite3
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import UniqueConstraint, event, text
+from sqlalchemy import ForeignKeyConstraint, UniqueConstraint, event, false, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
@@ -56,12 +56,33 @@ class TimestampMixin:
 
 class User(db.Model, UserMixin, TimestampMixin):
     __tablename__ = "user"
+    __table_args__ = (
+        UniqueConstraint("username_key", name="uq_user_username_key"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    username_key = db.Column(db.String(255), nullable=False)
+    display_name = db.Column(db.String(80), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False, server_default=false())
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
+
+    projects = db.relationship("Project", back_populates="user")
+    tasks = db.relationship("Task", back_populates="user")
+    deleted_batches = db.relationship("DeletedBatch", back_populates="user")
+
+    @property
+    def is_protected_admin(self) -> bool:
+        return self.username_key == "admin"
+
+    @validates("username")
+    def _normalize_username(self, key: str, value: str) -> str:
+        self.username_key = value.casefold()
+        if not self.display_name:
+            self.display_name = value
+        return value
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -88,15 +109,24 @@ class User(db.Model, UserMixin, TimestampMixin):
 
 class Project(db.Model, TimestampMixin):
     __tablename__ = "project"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_project_id_user_id"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
     name = db.Column(db.String(120), nullable=False)
     color = db.Column(db.String(20), nullable=False, default="blue")
     notes = db.Column(db.Text, nullable=False, default="")
 
+    user = db.relationship("User", back_populates="projects")
     tasks = db.relationship(
         "Task", back_populates="project", lazy="dynamic",
         order_by="Task.position, Task.id",
+        foreign_keys="Task.project_id",
     )
 
     @property
@@ -135,8 +165,31 @@ class TaskDate(db.Model, TimestampMixin):
 
 class Task(db.Model, TimestampMixin):
     __tablename__ = "task"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_task_id_user_id"),
+        ForeignKeyConstraint(
+            ["project_id", "user_id"],
+            ["project.id", "project.user_id"],
+            name="fk_task_project_owner",
+        ),
+        ForeignKeyConstraint(
+            ["parent_id", "user_id"],
+            ["task.id", "task.user_id"],
+            name="fk_task_parent_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["recurrence_source_id", "user_id"],
+            ["task.id", "task.user_id"],
+            name="fk_task_recurrence_source_owner",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
     title = db.Column(db.String(255), nullable=False)
     notes = db.Column(db.Text, nullable=False, default="")
     done = db.Column(db.Boolean, nullable=False, default=False, index=True)
@@ -154,7 +207,10 @@ class Task(db.Model, TimestampMixin):
         db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=True, index=True,
     )
 
-    project = db.relationship("Project", back_populates="tasks")
+    user = db.relationship("User", back_populates="tasks")
+    project = db.relationship(
+        "Project", back_populates="tasks", foreign_keys=[project_id]
+    )
     parent = db.relationship(
         "Task", remote_side=[id], foreign_keys=[parent_id],
         backref=db.backref("children", order_by="Task.position, Task.id"),
@@ -185,7 +241,7 @@ class Task(db.Model, TimestampMixin):
             return self._ancestors_cache
         chain, node = [], self.parent
         seen = set()
-        while node is not None and node.id not in seen:
+        while node is not None and node.id not in seen and node.user_id == self.user_id:
             seen.add(node.id)
             chain.append(node)
             node = node.parent
@@ -207,7 +263,10 @@ class Task(db.Model, TimestampMixin):
         ids = self.descendant_ids()
         if not ids:
             return None
-        tasks = Task.query.filter(Task.id.in_([self.id, *ids])).all()
+        tasks = Task.query.filter(
+            Task.id.in_([self.id, *ids]),
+            Task.user_id == self.user_id,
+        ).all()
         leaves = [t for t in tasks if not t.children]
         if not leaves:
             return None
@@ -218,11 +277,15 @@ class Task(db.Model, TimestampMixin):
         ids = self.descendant_ids()
         if not ids:
             return [self]
-        return Task.query.filter(Task.id.in_([self.id, *ids])).all()
+        return Task.query.filter(
+            Task.id.in_([self.id, *ids]),
+            Task.user_id == self.user_id,
+        ).all()
 
     def next_sibling_position(self) -> int:
         q = db.session.query(db.func.max(Task.position)).filter(
             Task.parent_id == self.parent_id,
+            Task.user_id == self.user_id,
         )
         if self.project_id is not None:
             q = q.filter(Task.project_id == self.project_id)
@@ -240,8 +303,14 @@ class DeletedBatch(db.Model, TimestampMixin):
     __tablename__ = "deleted_batch"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
     summary = db.Column(db.String(255), nullable=False, default="")
     payload = db.Column(db.Text, nullable=False, default="")
+
+    user = db.relationship("User", back_populates="deleted_batches")
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<DeletedBatch {self.id} {self.summary!r}>"

@@ -48,7 +48,9 @@ h3 { margin: 0; }
 }
 .nav a:hover { background: var(--accent-soft); color: var(--ink); text-decoration: none; }
 .nav a.active { background: var(--accent); color: #fff; }
-.logout-form { margin-left: auto; }
+.account-nav { margin-left: auto; display: flex; align-items: center; gap: 0.45rem; }
+.account-link { font-weight: 600; color: var(--ink-soft); max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-link:hover { color: var(--ink); text-decoration: none; }
 
 /* ---- layout ---- */
 .page { max-width: 1100px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
@@ -315,6 +317,43 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   text-overflow: ellipsis; white-space: nowrap;
 }
 .month-more { font-size: 0.6rem; color: var(--ink-soft); }
+.calendar-layout-toggle { border-left: 1px solid var(--line); padding-left: 0.75rem; }
+.year-calendar {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem; margin-bottom: 1.5rem;
+}
+.year-month { min-width: 0; }
+.year-month h2 { font-size: 1rem; margin: 0 0 0.4rem; }
+.year-month h2 a { color: var(--ink); }
+.year-month-grid .month-weekday { padding: 0.25rem 0.1rem; }
+.year-month-grid .year-month-cell {
+  min-height: 0; aspect-ratio: 1; padding: 0.15rem;
+}
+.year-month-grid .month-day { font-size: 0.72rem; }
+.year-month-marks { display: flex; gap: 0.1rem; }
+.year-month-mark {
+  display: inline-block; min-width: 0.7rem; border-radius: 999px;
+  text-align: center; font-size: 0.52rem; line-height: 1.2; font-weight: 700;
+}
+.year-mark-due { background: #fce7f3; color: var(--due); }
+.year-mark-work { background: #cffafe; color: #0e7490; }
+.week-grid-wrap { overflow-x: auto; margin-bottom: 1.5rem; }
+.week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.4rem; min-width: 720px; }
+.week-cell {
+  min-height: 190px; padding: 0.55rem; display: flex; flex-direction: column;
+  gap: 0.35rem; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); color: var(--ink); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.week-cell:hover { background: var(--accent-soft); text-decoration: none; }
+.week-cell.is-today { box-shadow: inset 0 0 0 2px var(--accent); }
+.week-date { display: flex; justify-content: space-between; align-items: baseline; font-size: 1.1rem; }
+.week-date strong { color: var(--ink-soft); font-size: 0.75rem; }
+.week-counts { display: flex; flex-wrap: wrap; gap: 0.15rem; }
+.week-task {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.68rem; line-height: 1.3;
+}
 
 /* ---- dashboard stats ---- */
 .stat-row { display: flex; gap: 0.6rem; margin-bottom: 1.5rem; }
@@ -370,8 +409,11 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 
 /* ---- auth ---- */
 .auth-wrap { display: flex; justify-content: center; padding-top: 8vh; }
-.auth-card { width: 340px; }
+.auth-wrap-left { justify-content: flex-start; padding-top: 0; }
+.auth-card { width: 340px; max-width: 100%; }
 .auth-card h1 { margin-bottom: 1rem; }
+.auth-card h2 { margin-bottom: 0.75rem; }
+.auth-alt { margin: 0.35rem 0 0; font-size: 0.88rem; color: var(--ink-soft); }
 
 /* ---- swatches ---- */
 .swatches { display: flex; gap: 0.4rem; flex-wrap: wrap; }
@@ -393,7 +435,8 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   }
   .nav::-webkit-scrollbar { display: none; }
   .nav a { padding: 0.35rem 0.6rem; white-space: nowrap; }
-  .logout-form { margin-left: auto; }
+  .account-nav { margin-left: auto; }
+  .account-link { max-width: 7rem; }
   .page { padding: 1rem 0.8rem 3rem; }
   .page-head { align-items: flex-start; gap: 0.65rem; }
   .page-head h1 { font-size: 1.3rem; }
@@ -418,11 +461,18 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   .month-more { display: none; }
   .month-pill { font-size: 0.55rem; padding: 0.02rem 0.2rem; }
   .month-weekday { font-size: 0.6rem; }
+  .calendar-layout-toggle { border-left: 0; padding-left: 0; }
+  .year-calendar { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+  .week-grid { min-width: 720px; }
   .stat-row { flex-wrap: wrap; }
   .detail-grid, .project-layout { gap: 1rem; }
   .side-card { padding: 0.85rem; }
   .trash-item { align-items: flex-start; }
   .inline-add { flex-wrap: wrap; }
+}
+
+@media (max-width: 520px) {
+  .year-calendar { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

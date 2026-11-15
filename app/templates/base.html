@@ -17,17 +17,30 @@
 <header class="topbar">
   <div class="topbar-inner">
     <a class="brand" href="{{ url_for('main.dashboard') }}"><span class="brand-dot"></span>To&#8209;Do</a>
-    <nav class="nav">
-      <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}">Dashboard</a>
-      <a href="{{ url_for('calendarview.view', kind='day') }}" class="{{ 'active' if request.blueprint == 'calendarview' }}">Calendar</a>
-      <a href="{{ url_for('tasks.index') }}" class="{{ 'active' if request.blueprint == 'tasks' and request.endpoint != 'tasks.trash' }}">Tasks</a>
-      <a href="{{ url_for('projects.index') }}" class="{{ 'active' if request.blueprint == 'projects' }}">Projects</a>
-      <a href="{{ url_for('tasks.trash') }}" class="{{ 'active' if request.endpoint == 'tasks.trash' }}">Trash</a>
-    </nav>
-    <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn-ghost btn-sm" type="submit">Log out</button>
-    </form>
+    {% if current_user.is_authenticated %}
+      <nav class="nav">
+        <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}">Dashboard</a>
+        <a href="{{ url_for('calendarview.view', kind='day') }}" class="{{ 'active' if request.blueprint == 'calendarview' }}">Calendar</a>
+        <a href="{{ url_for('tasks.index') }}" class="{{ 'active' if request.blueprint == 'tasks' and request.endpoint != 'tasks.trash' }}">Tasks</a>
+        <a href="{{ url_for('projects.index') }}" class="{{ 'active' if request.blueprint == 'projects' }}">Projects</a>
+        <a href="{{ url_for('tasks.trash') }}" class="{{ 'active' if request.endpoint == 'tasks.trash' }}">Trash</a>
+        {% if current_user.is_admin %}
+          <a href="{{ url_for('auth.admin_users') }}" class="{{ 'active' if request.endpoint in ('auth.admin_users', 'auth.delete_user') }}">Users</a>
+        {% endif %}
+      </nav>
+      <div class="account-nav">
+        <a class="account-link" href="{{ url_for('auth.account') }}">{{ current_user.username }}</a>
+        <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-sm" type="submit">Log out</button>
+        </form>
+      </div>
+    {% else %}
+      <nav class="nav">
+        <a href="{{ url_for('auth.login') }}" class="{{ 'active' if request.endpoint == 'auth.login' }}">Log in</a>
+        <a href="{{ url_for('auth.signup') }}" class="{{ 'active' if request.endpoint == 'auth.signup' }}">Sign up</a>
+      </nav>
+    {% endif %}
   </div>
 </header>
 

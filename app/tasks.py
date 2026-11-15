@@ -13,10 +13,11 @@ from flask import (
     session,
     url_for,
 )
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
 from . import periods
+from .access import batch_or_404, task_or_404
 from .forms import (
     DeleteForm,
     DueDateForm,
@@ -44,12 +45,14 @@ bp = Blueprint("tasks", __name__, url_prefix="/tasks")
 
 def _project_choices(form: TaskForm) -> None:
     form.project_id.choices = [(0, "— No project —")] + [
-        (p.id, p.name) for p in Project.query.order_by(Project.name)
+        (p.id, p.name)
+        for p in Project.query.filter_by(user_id=current_user.id)
+        .order_by(Project.name)
     ]
 
 
 def _parent_choices(form: TaskForm, task: Task | None = None) -> None:
-    q = Task.query
+    q = Task.query.filter(Task.user_id == current_user.id)
     if task is not None:
         excluded = {task.id, *task.descendant_ids()}
         q = q.filter(~Task.id.in_(excluded))
@@ -67,6 +70,14 @@ def _parse_ids(form) -> tuple[int, int]:
 
 def _save_from_form(form: TaskForm, task: Task) -> bool:
     project_id, parent_id = _parse_ids(form)
+    project = db.session.get(Project, project_id) if project_id else None
+    if project_id and (project is None or project.user_id != current_user.id):
+        form.project_id.errors.append("Choose one of your own projects.")
+        return False
+    parent = db.session.get(Task, parent_id) if parent_id else None
+    if parent_id and (parent is None or parent.user_id != current_user.id):
+        form.parent_id.errors.append("Choose one of your own tasks as the parent.")
+        return False
     if (
         task.id is not None
         and parent_id
@@ -99,13 +110,16 @@ def _spawn_recurrence(task: Task) -> Task | None:
     """Create the next occurrence when a repeating task is completed."""
     if task.recurrence == "none" or task.due_date is None:
         return None
-    if Task.query.filter_by(recurrence_source_id=task.id).first() is not None:
+    if Task.query.filter_by(
+        recurrence_source_id=task.id, user_id=task.user_id
+    ).first() is not None:
         return None
     next_due = _recurrence_date(task.due_date, task.recurrence)
     if next_due is None:
         return None
     delta = next_due - task.due_date
     clone = Task(
+        user_id=task.user_id,
         title=task.title,
         notes=task.notes,
         done=False,
@@ -138,7 +152,7 @@ def index():
     # silently turn the result into an empty page.
     hide = session.get("hide_completed", False) and status != "done"
 
-    all_tasks = prepare_tasks(load_all_tasks())
+    all_tasks = prepare_tasks(load_all_tasks(current_user.id))
 
     def matches(task: Task) -> bool:
         if q and q.casefold() not in task.title.casefold():
@@ -159,7 +173,9 @@ def index():
         "tasks/index.html",
         roots=roots,
         delete_form=DeleteForm(),
-        projects=Project.query.order_by(Project.name).all(),
+        projects=Project.query.filter_by(user_id=current_user.id)
+        .order_by(Project.name)
+        .all(),
         q=q,
         project_filter=project_id,
         status=status,
@@ -171,8 +187,9 @@ def index():
 @login_required
 def create():
     parent = None
-    if request.args.get("parent"):
-        parent = Task.query.get_or_404(request.args.get("parent", type=int), description="Parent task")
+    parent_id = request.args.get("parent", type=int)
+    if parent_id:
+        parent = task_or_404(parent_id)
     preset_project = request.args.get("project")
 
     form = TaskForm()
@@ -189,7 +206,7 @@ def create():
                 pass
 
     if form.validate_on_submit():
-        task = Task()
+        task = Task(user_id=current_user.id)
         if _save_from_form(form, task):
             task.position = task.next_sibling_position()
             db.session.add(task)
@@ -202,10 +219,10 @@ def create():
 @bp.route("/<int:task_id>")
 @login_required
 def detail(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     from .queries import load_all_tasks
 
-    prepare_tasks(load_all_tasks())
+    prepare_tasks(load_all_tasks(current_user.id))
     return render_template(
         "tasks/detail.html",
         task=task,
@@ -214,14 +231,16 @@ def detail(task_id: int):
         work_form=WorkDateForm(),
         due_form=DueDateForm(data={"due_date": task.due_date} if task.due_date else {}),
         subtask_form=QuickTaskForm(),
-        projects=Project.query.order_by(Project.name).all(),
+        projects=Project.query.filter_by(user_id=current_user.id)
+        .order_by(Project.name)
+        .all(),
     )
 
 
 @bp.route("/<int:task_id>/edit", methods=("GET", "POST"))
 @login_required
 def edit(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     form = TaskForm(obj=task)
     _project_choices(form)
     _parent_choices(form, task)
@@ -235,7 +254,7 @@ def edit(task_id: int):
 @bp.route("/<int:task_id>/toggle", methods=("POST",))
 @login_required
 def toggle(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     becoming_done = not task.done
     task.done = becoming_done
     spawned = _spawn_recurrence(task) if becoming_done else None
@@ -251,7 +270,7 @@ def toggle(task_id: int):
 @login_required
 def notes(task_id: int):
     """Autosave endpoint for the task notes editor."""
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     data, token = notes_payload()
     if not csrf_valid(token):
         return {"ok": False, "error": "bad csrf"}, 400
@@ -292,7 +311,11 @@ def _snapshot_batch(task: Task) -> DeletedBatch:
         )
     items.sort(key=lambda item: item["depth"])
     summary = task.title if len(items) == 1 else f"{task.title} + {len(items) - 1} sub-task(s)"
-    return DeletedBatch(summary=summary, payload=json.dumps({"tasks": items}))
+    return DeletedBatch(
+        user_id=task.user_id,
+        summary=summary,
+        payload=json.dumps({"tasks": items}),
+    )
 
 
 def _restore_batch(batch: DeletedBatch) -> int:
@@ -302,23 +325,27 @@ def _restore_batch(batch: DeletedBatch) -> int:
     count = 0
     for item in items:
         old_parent = item.get("parent_id")
+        parent = db.session.get(Task, old_parent) if old_parent else None
         if old_parent in old_to_new:
             parent_id = old_to_new[old_parent]
-        elif old_parent and db.session.get(Task, old_parent) is not None:
+        elif parent is not None and parent.user_id == batch.user_id:
             parent_id = old_parent
         else:
             parent_id = None
 
         project_id = item.get("project_id")
-        if project_id and db.session.get(Project, project_id) is None:
+        project = db.session.get(Project, project_id) if project_id else None
+        if project is None or project.user_id != batch.user_id:
             project_id = None
         source_id = item.get("recurrence_source_id")
         source_id = old_to_new.get(source_id, source_id)
-        if source_id and db.session.get(Task, source_id) is None:
+        source = db.session.get(Task, source_id) if source_id else None
+        if source is None or source.user_id != batch.user_id:
             source_id = None
 
         due = item.get("due_date")
         task = Task(
+            user_id=batch.user_id,
             title=item["title"],
             notes=item.get("notes", ""),
             done=bool(item.get("done")),
@@ -339,7 +366,12 @@ def _restore_batch(batch: DeletedBatch) -> int:
 
 
 def _trim_trash(keep: int = 20) -> None:
-    batches = DeletedBatch.query.order_by(DeletedBatch.created_at.desc()).all()
+    batches = (
+        DeletedBatch.query
+        .filter_by(user_id=current_user.id)
+        .order_by(DeletedBatch.created_at.desc())
+        .all()
+    )
     removed = False
     for batch in batches[keep:]:
         db.session.delete(batch)
@@ -356,13 +388,15 @@ def _trim_trash(keep: int = 20) -> None:
 @bp.route("/<int:task_id>/delete", methods=("POST",))
 @login_required
 def delete(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     ids = [task.id, *task.descendant_ids()]
     batch = _snapshot_batch(task)
     db.session.add(batch)
     db.session.flush()
     TaskDate.query.filter(TaskDate.task_id.in_(ids)).delete(synchronize_session=False)
-    Task.query.filter(Task.id.in_(ids)).delete(synchronize_session=False)
+    Task.query.filter(
+        Task.id.in_(ids), Task.user_id == current_user.id
+    ).delete(synchronize_session=False)
     db.session.commit()
     session["last_deleted_batch"] = batch.id
     _trim_trash()
@@ -377,14 +411,19 @@ def delete(task_id: int):
 @bp.route("/trash")
 @login_required
 def trash():
-    batches = DeletedBatch.query.order_by(DeletedBatch.created_at.desc()).all()
+    batches = (
+        DeletedBatch.query
+        .filter_by(user_id=current_user.id)
+        .order_by(DeletedBatch.created_at.desc())
+        .all()
+    )
     return render_template("tasks/trash.html", batches=batches, delete_form=DeleteForm())
 
 
 @bp.route("/trash/<int:batch_id>/restore", methods=("POST",))
 @login_required
 def restore(batch_id: int):
-    batch = DeletedBatch.query.get_or_404(batch_id)
+    batch = batch_or_404(batch_id)
     count = _restore_batch(batch)
     summary = batch.summary
     db.session.delete(batch)
@@ -397,7 +436,7 @@ def restore(batch_id: int):
 @bp.route("/trash/<int:batch_id>/purge", methods=("POST",))
 @login_required
 def purge(batch_id: int):
-    batch = DeletedBatch.query.get_or_404(batch_id)
+    batch = batch_or_404(batch_id)
     db.session.delete(batch)
     db.session.commit()
     flash("Deleted batch removed permanently.", "ok")
@@ -407,7 +446,7 @@ def purge(batch_id: int):
 @bp.route("/trash/empty", methods=("POST",))
 @login_required
 def empty_trash():
-    DeletedBatch.query.delete()
+    DeletedBatch.query.filter_by(user_id=current_user.id).delete()
     db.session.commit()
     session.pop("last_deleted_batch", None)
     flash("Trash emptied.", "ok")
@@ -417,10 +456,15 @@ def empty_trash():
 @bp.route("/<int:task_id>/subtasks", methods=("POST",))
 @login_required
 def add_subtask(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     form = QuickTaskForm()
     if form.validate_on_submit():
-        child = Task(title=form.title.data.strip(), parent_id=task.id, project_id=task.project_id)
+        child = Task(
+            user_id=current_user.id,
+            title=form.title.data.strip(),
+            parent_id=task.id,
+            project_id=task.project_id,
+        )
         child.position = child.next_sibling_position()
         db.session.add(child)
         db.session.commit()
@@ -433,7 +477,7 @@ def add_subtask(task_id: int):
 @bp.route("/<int:task_id>/due", methods=("POST",))
 @login_required
 def set_due(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     form = DueDateForm()
     if form.validate_on_submit():
         task.due_date = form.due_date.data
@@ -448,7 +492,7 @@ def set_due(task_id: int):
 @login_required
 def add_work_dates(task_id: int):
     """Add a single date or an inclusive range of work-on dates."""
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     form = WorkDateForm()
     if form.validate_on_submit():
         end = form.end.data or form.start.data
@@ -472,7 +516,7 @@ def add_work_dates(task_id: int):
 @bp.route("/<int:task_id>/work-dates/<int:td_id>/remove", methods=("POST",))
 @login_required
 def remove_work_date(task_id: int, td_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     td = TaskDate.query.get_or_404(td_id)
     if td.task_id != task.id:
         abort(400)
@@ -485,7 +529,7 @@ def remove_work_date(task_id: int, td_id: int):
 @bp.route("/<int:task_id>/complete-subtree", methods=("POST",))
 @login_required
 def complete_subtree(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     tasks = task.descendant_objects()
     for item in tasks:
         item.done = True
@@ -500,9 +544,10 @@ def complete_subtree(task_id: int):
 @bp.route("/<int:task_id>/reassign", methods=("POST",))
 @login_required
 def reassign_subtree(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     project_id = request.form.get("project_id", type=int) or None
-    if project_id and db.session.get(Project, project_id) is None:
+    project = db.session.get(Project, project_id) if project_id else None
+    if project_id and (project is None or project.user_id != current_user.id):
         abort(400)
     tasks = task.descendant_objects()
     for item in tasks:
@@ -515,7 +560,7 @@ def reassign_subtree(task_id: int):
 @bp.route("/<int:task_id>/reschedule", methods=("POST",))
 @login_required
 def reschedule_subtree(task_id: int):
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     raw = (request.form.get("due_date") or "").strip()
     try:
         due = periods.parse_day(raw) if raw else None
@@ -534,14 +579,14 @@ def reschedule_subtree(task_id: int):
 @login_required
 def reorder(task_id: int):
     """Move a task before/after a sibling (drag-and-drop target)."""
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     data = request.get_json(silent=True) or {}
     target_id = data.get("target_id")
     try:
         target_id = int(target_id)
     except (TypeError, ValueError):
         return {"ok": False, "error": "target_id required"}, 400
-    target = Task.query.get_or_404(target_id)
+    target = task_or_404(target_id)
     if target.id == task.id or target.id in task.descendant_ids():
         return {"ok": False, "error": "cannot move a task into itself"}, 400
 
@@ -552,9 +597,17 @@ def reorder(task_id: int):
         item.project_id = project_id
 
     if new_parent is None:
-        siblings = Task.query.filter(Task.parent_id.is_(None), Task.id != task.id)
+        siblings = Task.query.filter(
+            Task.user_id == current_user.id,
+            Task.parent_id.is_(None),
+            Task.id != task.id,
+        )
     else:
-        siblings = Task.query.filter(Task.parent_id == new_parent, Task.id != task.id)
+        siblings = Task.query.filter(
+            Task.user_id == current_user.id,
+            Task.parent_id == new_parent,
+            Task.id != task.id,
+        )
     siblings = siblings.order_by(Task.position, Task.id).all()
     index = next((i for i, item in enumerate(siblings) if item.id == target.id), len(siblings))
     if data.get("position") == "after":
@@ -571,7 +624,9 @@ def reorder(task_id: int):
 def search():
     """JSON task-name search for the typeahead on the project page."""
     q = (request.args.get("q") or "").strip()[:200]
-    query = Task.query.options(joinedload(Task.project))
+    query = Task.query.filter(
+        Task.user_id == current_user.id
+    ).options(joinedload(Task.project))
     if q:
         query = query.filter(Task.title.ilike(f"%{q}%"))
     tasks = query.order_by(Task.title).limit(50).all()
@@ -594,7 +649,14 @@ def search():
 def scheduled():
     """Overdue and working-on-today lists (open tasks only)."""
     t = periods.today()
-    overdue = due_in(dt.date(2000, 1, 1), t - dt.timedelta(days=1), include_done=False)
-    working_now = work_rows(t, t, include_done=False)
-    prepare_tasks()
+    overdue = due_in(
+        dt.date(2000, 1, 1),
+        t - dt.timedelta(days=1),
+        include_done=False,
+        user_id=current_user.id,
+    )
+    working_now = work_rows(
+        t, t, include_done=False, user_id=current_user.id
+    )
+    prepare_tasks(user_id=current_user.id)
     return render_template("tasks/scheduled.html", overdue=overdue, working_now=working_now)

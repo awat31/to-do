@@ -17,10 +17,11 @@ from flask import (
     session,
     url_for,
 )
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from . import periods, queries
-from .models import Task, TaskDate, db
+from .access import task_or_404
+from .models import TaskDate, db
 from .utils import csrf_valid, redirect_back
 
 bp = Blueprint("calendarview", __name__, url_prefix="/calendar")
@@ -45,24 +46,19 @@ def _selection() -> tuple[bool, bool]:
 def _sel_kwargs() -> dict:
     """due/work query arguments mirroring the current selection."""
     due_sel, work_sel = _selection()
-    return {"due": 1 if due_sel else 0, "work": 1 if work_sel else 0}
+    out = {"due": 1 if due_sel else 0, "work": 1 if work_sel else 0}
+    layout = request.args.get("layout")
+    if layout in ("list", "calendar"):
+        out["layout"] = layout
+    return out
 
 
 def _keyfn(kind: str):
     return (lambda d: (d.month,)) if kind == "year" else (lambda d: (d,))
 
 
-def _due_breakdown(kind: str, start, end, keyfn) -> list:
+def _breakdown(per_date: dict, keyfn) -> list:
     """(group_key, [(date, tasks), ...]) sorted by group then date."""
-    per_date = queries.due_groups(start, end)  # date -> tasks
-    grouped: dict = {}
-    for d, tasks in per_date.items():
-        grouped.setdefault(keyfn(d), {}).setdefault(d, []).extend(tasks)
-    return [(k, sorted(m.items())) for k, m in sorted(grouped.items())]
-
-
-def _work_breakdown(kind: str, start, end, keyfn) -> list:
-    per_date = queries.work_groups(start, end)  # date -> tasks
     grouped: dict = {}
     for d, tasks in per_date.items():
         grouped.setdefault(keyfn(d), {}).setdefault(d, []).extend(tasks)
@@ -94,31 +90,72 @@ def view(kind: str, value: str | None):
 
     due_sel, work_sel = _selection()
     keyfn = _keyfn(kind)
+    layout_mode = request.args.get("layout", "calendar")
+    if layout_mode not in ("list", "calendar"):
+        layout_mode = "calendar"
+    if kind == "day":
+        layout_mode = "list"
     hide = session.get("hide_completed", False)
 
-    due_break = _due_breakdown(kind, p["start"], p["end"], keyfn) if due_sel else []
-    work_break = _work_breakdown(kind, p["start"], p["end"], keyfn) if work_sel else []
+    due_break = (
+        _breakdown(
+            queries.due_groups(p["start"], p["end"], user_id=current_user.id), keyfn
+        )
+        if due_sel else []
+    )
+    work_break = (
+        _breakdown(
+            queries.work_groups(p["start"], p["end"], user_id=current_user.id), keyfn
+        )
+        if work_sel else []
+    )
     if hide:
         due_break = _strip_done(due_break)
         work_break = _strip_done(work_break)
     due_count = sum(len(tasks) for _, days in due_break for _, tasks in days)
     work_count = sum(len(tasks) for _, days in work_break for _, tasks in days)
     month_grid = _month_grid(p, due_break, work_break) if kind == "month" else None
-    queries.prepare_tasks()
+    week_grid = _week_grid(p, due_break, work_break) if kind == "week" else None
+    year_months = _year_months(p, due_break, work_break) if kind == "year" else None
+    queries.prepare_tasks(user_id=current_user.id)
 
     return render_template(
         "calendar.html",
         p=p, kind=kind, due_sel=due_sel, work_sel=work_sel,
         due_break=due_break, work_break=work_break,
         due_count=due_count, work_count=work_count,
-        month_grid=month_grid,
+        month_grid=month_grid, week_grid=week_grid,
+        year_months=year_months, layout_mode=layout_mode,
     )
 
 
-def _month_grid(p, due_break, work_break) -> dict:
-    """Compact Monday-first month grid used above the detailed list."""
+def _date_maps(due_break, work_break):
     due_map = {d: tasks for _, days in due_break for d, tasks in days}
     work_map = {d: tasks for _, days in work_break for d, tasks in days}
+    return due_map, work_map
+
+
+def _calendar_cell(day, due_map, work_map, in_month: bool, today) -> dict:
+    due = due_map.get(day, [])
+    work = work_map.get(day, [])
+    tasks, seen = [], set()
+    for task in [*due, *work]:
+        if task.id not in seen:
+            seen.add(task.id)
+            tasks.append(task)
+    return {
+        "date": day,
+        "in_month": in_month,
+        "is_today": day == today,
+        "due": due,
+        "work": work,
+        "tasks": tasks,
+    }
+
+
+def _month_grid(p, due_break, work_break) -> dict:
+    """Compact Monday-first month grid."""
+    due_map, work_map = _date_maps(due_break, work_break)
     first, last = p["start"], p["end"]
     grid_start = first - dt.timedelta(days=first.weekday())
     grid_end = last + dt.timedelta(days=6 - last.weekday())
@@ -126,26 +163,47 @@ def _month_grid(p, due_break, work_break) -> dict:
     cells = []
     day = grid_start
     while day <= grid_end:
-        tasks, seen = [], set()
-        for task in [*due_map.get(day, []), *work_map.get(day, [])]:
-            if task.id not in seen:
-                seen.add(task.id)
-                tasks.append(task)
         cells.append(
-            {
-                "date": day,
-                "in_month": first <= day <= last,
-                "is_today": day == today,
-                "due": due_map.get(day, []),
-                "work": work_map.get(day, []),
-                "tasks": tasks,
-            }
+            _calendar_cell(day, due_map, work_map, first <= day <= last, today)
         )
         day += dt.timedelta(days=1)
     return {
         "cells": cells,
         "weekdays": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
     }
+
+
+def _week_grid(p, due_break, work_break) -> dict:
+    """Seven-day calendar table for the selected week."""
+    due_map, work_map = _date_maps(due_break, work_break)
+    today = periods.today()
+    cells = [
+        _calendar_cell(
+            p["start"] + dt.timedelta(days=offset), due_map, work_map, True, today
+        )
+        for offset in range(7)
+    ]
+    return {
+        "cells": cells,
+        "weekdays": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+    }
+
+
+def _year_months(p, due_break, work_break) -> list[dict]:
+    """Build one linked mini-calendar for each month of the selected year."""
+    months = []
+    for month in range(1, 13):
+        first = dt.date(p["start"].year, month, 1)
+        value = periods.month_value(first)
+        month_period = periods.period("month", value)
+        months.append(
+            {
+                "month": month,
+                "value": value,
+                "grid": _month_grid(month_period, due_break, work_break),
+            }
+        )
+    return months
 
 
 @bp.route("/jump", methods=("GET",))
@@ -187,7 +245,7 @@ def quick_add_date(task_id: int):
     dashboard); an unparseable value redirects back with a flash message
     instead of erroring out.
     """
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     if not csrf_valid(request.form.get("csrf_token", "")):
         abort(400)
     raw = (request.form.get("date") or "").strip()
