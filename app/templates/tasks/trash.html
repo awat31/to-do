@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Trash · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Trash</h1>
+  {% if batches %}
+  <form method="post" action="{{ url_for('tasks.empty_trash') }}"
+        data-confirm="Permanently delete every batch in the trash?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-danger" type="submit">Empty trash</button>
+  </form>
+  {% endif %}
+</div>
+
+<p class="hint">Deleted tasks are kept here for up to 30 days (or the newest 20 batches) so you can restore them.</p>
+
+{% if batches %}
+  <div class="trash-list">
+    {% for batch in batches %}
+      <div class="trash-item">
+        <div>
+          <strong>{{ batch.summary }}</strong>
+          <span class="muted">{{ batch.created_at | human_date }} {{ batch.created_at.strftime('%H:%M') }}</span>
+        </div>
+        <div class="head-actions">
+          <form method="post" action="{{ url_for('tasks.restore', batch_id=batch.id) }}" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-soft btn-sm" type="submit">Restore</button>
+          </form>
+          <form method="post" action="{{ url_for('tasks.purge', batch_id=batch.id) }}"
+                data-confirm="Delete this batch permanently?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="empty big">Trash is empty.</p>
+{% endif %}
+{% endblock %}

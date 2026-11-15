@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Projects · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Projects</h1>
+  <div class="head-actions">
+    <a class="btn btn-primary" href="{{ url_for('projects.create') }}">New project</a>
+  </div>
+</div>
+{% if projects %}
+<div class="project-grid">
+  {% for project in projects %}
+  <a class="project-card" style="--chip: {{ color_hex(project.color) }}" href="{{ url_for('projects.detail', project_id=project.id) }}">
+    <span class="project-swatch"></span>
+    <span class="project-name">{{ project.name }}</span>
+    {% set count = counts.get(project.id, 0) %}
+    <span class="project-count">{{ count }} task{{ '' if count == 1 else 's' }}</span>
+    {% if project.notes %}<span class="project-notes-preview">{{ project.notes | truncate(90) }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty big">No projects yet. <a href="{{ url_for('projects.create') }}">Create one</a> to group tasks and keep notes.</p>
+{% endif %}
+{% endblock %}

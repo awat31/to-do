@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Log in · To-Do{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <form method="post" class="stack form-card auth-card">
+    {{ form.hidden_tag() }}
+    <h1>Sign in</h1>
+    <div class="field">
+      {{ form.username.label }} {{ form.username(class="input", autofocus=True, autocomplete="username") }}
+      {% for e in form.username.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    </div>
+    <div class="field">
+      {{ form.password.label }} {{ form.password(class="input", autocomplete="current-password") }}
+      {% for e in form.password.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    </div>
+    <label class="check-line">{{ form.remember() }} {{ form.remember.label }}</label>
+    <button class="btn btn-primary" type="submit">Log in</button>
+    <p class="auth-alt">New here? <a href="{{ url_for('auth.signup') }}">Create an account</a>.</p>
+  </form>
+</div>
+{% endblock %}

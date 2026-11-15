@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if task else 'New' }} task · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Edit task' if task else ('New sub-task of “' ~ parent.title ~ '”' if parent else 'New task') }}</h1>
+</div>
+<form method="post" class="stack form-card">
+  {{ form.hidden_tag() }}
+  <div class="field">
+    {{ form.title.label }} {{ form.title(class="input", autofocus=True, placeholder="What needs doing?") }}
+    {% for e in form.title.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </div>
+  <div class="field">
+    {{ form.notes.label }} {{ form.notes(class="input", rows=6, placeholder="Details…") }}
+  </div>
+  <div class="field">
+    {{ form.due_date.label }} {{ form.due_date(class="input input-date") }}
+    {% for e in form.due_date.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </div>
+  <div class="field">
+    {{ form.recurrence.label }} {{ form.recurrence(class="input") }}
+    {% for e in form.recurrence.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    <span class="hint">A repeat creates the next occurrence when this task is completed. Requires a due date.</span>
+  </div>
+  <div class="field">
+    {{ form.project_id.label }} {{ form.project_id(class="input") }}
+    {% for e in form.project_id.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </div>
+  <div class="field">
+    {{ form.parent_id.label }} {{ form.parent_id(class="input") }}
+    {% for e in form.parent_id.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Save task</button>
+    <a class="btn btn-ghost" href="{{ url_for('tasks.detail', task_id=task.id) if task else url_for('tasks.index') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

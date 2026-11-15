@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Your account · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Your account <span class="muted">{{ current_user.username }}</span></h1>
+</div>
+
+<div class="auth-wrap auth-wrap-left">
+  <form method="post" action="{{ url_for('auth.update_display_name') }}"
+        class="stack form-card auth-card">
+    {{ display_form.hidden_tag() }}
+    <h2>Display Name</h2>
+    <div class="field">
+      {{ display_form.display_name.label }}
+      {{ display_form.display_name(class="input", autocomplete="nickname") }}
+      {% for e in display_form.display_name.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      <span class="hint">Shown in your Dashboard greeting.</span>
+    </div>
+    <button class="btn btn-primary" type="submit">Save display name</button>
+  </form>
+
+  <form method="post" action="{{ url_for('auth.update_appearance') }}"
+        class="stack form-card auth-card">
+    {{ appearance_form.hidden_tag() }}
+    <h2>Appearance</h2>
+    <div class="field">
+      {{ appearance_form.highlight_color.label }}
+      {{ appearance_form.highlight_color(class="input input-color", type="color") }}
+      {% for e in appearance_form.highlight_color.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      <span class="hint">Choose the highlight colour used throughout the app.</span>
+    </div>
+    <label class="switch">
+      {{ appearance_form.night_mode() }}
+      <span class="switch-track"><span class="switch-knob"></span></span>
+      <span class="switch-label">Night mode</span>
+    </label>
+    <button class="btn btn-primary" type="submit">Save appearance</button>
+  </form>
+
+  <form method="post" class="stack form-card auth-card">
+    {{ form.hidden_tag() }}
+    <h2>Change password</h2>
+    <div class="field">
+      {{ form.current_password.label }} {{ form.current_password(class="input", autocomplete="current-password") }}
+      {% for e in form.current_password.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    </div>
+    <div class="field">
+      {{ form.new_password.label }} {{ form.new_password(class="input", autocomplete="new-password") }}
+      {% for e in form.new_password.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      <span class="hint">At least 8 characters.</span>
+    </div>
+    <div class="field">
+      {{ form.confirm_password.label }} {{ form.confirm_password(class="input", autocomplete="new-password") }}
+      {% for e in form.confirm_password.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    </div>
+    <button class="btn btn-primary" type="submit">Update password</button>
+  </form>
+
+  {% if current_user.is_protected_admin %}
+    <div class="form-card auth-card">
+      <h2>Delete your account</h2>
+      <p class="hint">The built-in admin account cannot be deleted.</p>
+    </div>
+  {% else %}
+    <form method="post" action="{{ url_for('auth.delete_account') }}"
+          class="stack form-card auth-card"
+          data-confirm="Permanently delete your account, tasks, projects, and trash?">
+      {{ delete_form.hidden_tag() }}
+      <h2>Delete your account</h2>
+      <p class="hint">This permanently deletes your account and all of its tasks, projects, schedules, and trash.</p>
+      <div class="field">
+        {{ delete_form.current_password.label }}
+        {{ delete_form.current_password(class="input", autocomplete="current-password") }}
+        {% for e in delete_form.current_password.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      </div>
+      <button class="btn btn-danger" type="submit">Delete my account</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

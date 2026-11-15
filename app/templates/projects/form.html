@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if project else 'New' }} project · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Edit project' if project else 'New project' }}</h1>
+</div>
+<form method="post" class="stack form-card">
+  {{ form.hidden_tag() }}
+  <div class="field">
+    {{ form.name.label }} {{ form.name(class="input", autofocus=True, placeholder="e.g. Kitchen renovation") }}
+    {% for e in form.name.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </div>
+  <div class="field">
+    {{ form.color.label }}
+    <div class="swatches">
+      {% for value, label in form.color.choices %}
+      <label class="swatch-option">
+        <input type="radio" name="{{ form.color.name }}" value="{{ value }}" {{ 'checked' if form.color.data == value }}>
+        <span class="swatch" style="background: {{ color_hex(value) }}"></span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Save project</button>
+    <a class="btn btn-ghost" href="{{ url_for('projects.detail', project_id=project.id) if project else url_for('projects.index') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

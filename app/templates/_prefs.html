@@ -1,0 +1,12 @@
+{% macro hide_completed_toggle(next_url) %}
+<form method="post" action="{{ url_for('main.set_hide_completed') }}" class="hide-done-toggle">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  <label class="switch" title="When on, tasks that are already done are hidden">
+    <input type="checkbox" name="hide" value="1" {{ 'checked' if hide_completed }}
+           class="js-autosubmit">
+    <span class="switch-track"><span class="switch-knob"></span></span>
+    <span class="switch-label">Hide completed</span>
+  </label>
+</form>
+{% endmacro %}

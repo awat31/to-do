@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import task_tree with context %}
+{% from "_prefs.html" import hide_completed_toggle with context %}
+{% block title %}Tasks · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Tasks</h1>
+  <div class="head-actions">
+    {{ hide_completed_toggle(request.path) }}
+    <a class="btn btn-primary" href="{{ url_for('tasks.create') }}">New task</a>
+  </div>
+</div>
+
+<form method="get" class="filter-bar">
+  <input type="search" name="q" value="{{ q }}" class="input" placeholder="Search task names…" aria-label="Search task names">
+  <select name="project" class="input" aria-label="Filter by project">
+    <option value="">All projects</option>
+    {% for project in projects %}
+      <option value="{{ project.id }}" {{ 'selected' if project_filter == project.id }}>{{ project.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" class="input" aria-label="Filter by status">
+    <option value="all" {{ 'selected' if status == 'all' }}>All</option>
+    <option value="open" {{ 'selected' if status == 'open' }}>Open</option>
+    <option value="done" {{ 'selected' if status == 'done' }}>Done</option>
+  </select>
+  <button class="btn btn-soft" type="submit">Filter</button>
+  {% if filtered %}<a class="btn btn-ghost" href="{{ url_for('tasks.index') }}">Clear</a>{% endif %}
+</form>
+
+{% if roots %}
+  {{ task_tree(roots) }}
+{% else %}
+  <p class="empty big">
+    {% if filtered %}No tasks match those filters.
+    {% else %}No tasks yet. <a href="{{ url_for('tasks.create') }}">Create your first task</a>.{% endif %}
+  </p>
+{% endif %}
+{% endblock %}
