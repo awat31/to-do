@@ -224,7 +224,43 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   content: ""; display: block; width: 2px; margin-left: 1rem; height: 0.5rem;
   background: var(--line);
 }
-.tree-row { margin-bottom: 0.45rem; }
+.tree-row {
+  margin-bottom: 0.45rem; display: flex; align-items: flex-start; gap: 0.15rem;
+  border-radius: var(--radius); transition: box-shadow 0.12s, opacity 0.12s;
+}
+.tree-row > .task-card { flex: 1; min-width: 0; }
+.drag-handle {
+  color: #cfc7b5; cursor: grab; padding: 0.7rem 0.1rem 0 0; font-size: 1rem;
+  user-select: none; line-height: 1;
+}
+.tree-row:hover > .drag-handle { color: var(--ink-soft); }
+.tree-row.dragging { opacity: 0.35; }
+.tree-row.drop-target { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ---- task filters ---- */
+.filter-bar {
+  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.6rem 0.75rem; margin-bottom: 1.25rem; box-shadow: var(--shadow);
+}
+.filter-bar .input { width: auto; }
+.filter-bar input[type="search"] { flex: 1; min-width: 180px; }
+.chip-repeat { background: #ede9fe; border-color: #ddd6fe; color: #6d28d9; }
+
+/* ---- undo bar / trash ---- */
+.undo-bar {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+  padding: 0.5rem 0.8rem; border-radius: 10px; margin-bottom: 1rem; font-size: 0.9rem;
+}
+.trash-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.trash-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.75rem 1rem; box-shadow: var(--shadow); flex-wrap: wrap;
+}
+.trash-item .muted { display: block; font-size: 0.75rem; }
+.check-line { display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; color: var(--ink-soft); }
 
 /* ---- calendar ---- */
 .cal-toolbar {
@@ -248,6 +284,37 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 .mode-tab.off:hover { color: var(--ink); border-color: var(--line); }
 .period-nav { display: flex; gap: 0.35rem; align-items: center; margin-left: auto; }
 .period-today { font-weight: 700; }
+
+/* ---- month-at-a-glance grid ---- */
+.month-grid-wrap { margin-bottom: 1.5rem; }
+.month-grid {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+}
+.month-weekday {
+  background: #f7f1e3; color: var(--ink-soft); text-align: center;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; padding: 0.4rem 0.2rem;
+}
+.month-cell {
+  min-height: 82px; background: var(--surface); color: var(--ink);
+  padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.12rem;
+  overflow: hidden;
+}
+.month-cell:hover { background: var(--accent-soft); text-decoration: none; }
+.month-cell.is-outside { background: #fbf8ef; color: #b3ab9c; }
+.month-cell.is-today { box-shadow: inset 0 0 0 2px var(--accent); }
+.month-day { font-weight: 700; font-size: 0.8rem; line-height: 1.2; }
+.month-marks { display: flex; gap: 0.15rem; flex-wrap: wrap; }
+.month-pill { font-size: 0.58rem; font-weight: 700; padding: 0.05rem 0.28rem; border-radius: 999px; }
+.month-due { background: #fce7f3; color: var(--due); }
+.month-work { background: #cffafe; color: #0e7490; }
+.month-task {
+  font-size: 0.66rem; line-height: 1.25; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.month-more { font-size: 0.6rem; color: var(--ink-soft); }
 
 /* ---- dashboard stats ---- */
 .stat-row { display: flex; gap: 0.6rem; margin-bottom: 1.5rem; }
@@ -312,3 +379,52 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 .swatch { display: block; width: 34px; height: 34px; border-radius: 10px; cursor: pointer; border: 3px solid transparent; }
 .swatch-option input:checked + .swatch { border-color: var(--ink); }
 .swatch-option input:focus-visible + .swatch { outline: 2px solid var(--accent); }
+
+/* ---- mobile & touch polish ---- */
+@media (max-width: 700px) {
+  body { font-size: 14px; }
+  .topbar-inner {
+    padding: 0.5rem 0.8rem; gap: 0.5rem 0.75rem; flex-wrap: wrap;
+  }
+  .brand { font-size: 1rem; }
+  .nav {
+    order: 3; width: 100%; flex: 1 0 100%; overflow-x: auto;
+    padding-bottom: 0.15rem; scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a { padding: 0.35rem 0.6rem; white-space: nowrap; }
+  .logout-form { margin-left: auto; }
+  .page { padding: 1rem 0.8rem 3rem; }
+  .page-head { align-items: flex-start; gap: 0.65rem; }
+  .page-head h1 { font-size: 1.3rem; }
+  .head-actions { width: 100%; }
+  .section { margin-bottom: 1.4rem; }
+  .filter-bar { flex-direction: column; align-items: stretch; padding: 0.7rem; }
+  .filter-bar .input { width: 100%; }
+  .filter-bar .btn { justify-content: center; }
+  .task-card { gap: 0.45rem; padding: 0.55rem 0.6rem; }
+  .quick-add { opacity: 1; }
+  .quick-add .input-date-sm { width: 7.5rem; }
+  .tree-row { gap: 0; }
+  .drag-handle { display: none; }
+  .task-tree ul { padding-left: 1rem; }
+  .task-tree ul::before { display: none; }
+  .cal-toolbar { gap: 0.55rem; padding: 0.55rem; }
+  .period-nav { margin-left: 0; }
+  .jump-wrap { margin-left: auto; }
+  .kind-tab, .mode-tab { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+  .month-cell { min-height: 60px; padding: 0.25rem; }
+  .month-task { display: none; }
+  .month-more { display: none; }
+  .month-pill { font-size: 0.55rem; padding: 0.02rem 0.2rem; }
+  .month-weekday { font-size: 0.6rem; }
+  .stat-row { flex-wrap: wrap; }
+  .detail-grid, .project-layout { gap: 1rem; }
+  .side-card { padding: 0.85rem; }
+  .trash-item { align-items: flex-start; }
+  .inline-add { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

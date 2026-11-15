@@ -31,7 +31,7 @@
   {% for task in work_today %}
     {{ task_card(task, next_url=request.path, default_date=today) }}
   {% endfor %}
-  {% if not work_today %}<p class="empty">No work scheduled for today (beyond what's already due).</p>{% endif %}
+  {% if not work_today %}<p class="empty">No work currently scheduled for today.</p>{% endif %}
 </section>
 
 <section class="section">

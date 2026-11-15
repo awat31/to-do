@@ -7,13 +7,21 @@ group, tasks are listed under their exact dates.
 """
 import datetime as dt
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import login_required
-from flask_wtf.csrf import validate_csrf
-from werkzeug.exceptions import BadRequest
 
 from . import periods, queries
 from .models import Task, TaskDate, db
+from .utils import csrf_valid, redirect_back
 
 bp = Blueprint("calendarview", __name__, url_prefix="/calendar")
 
@@ -32,6 +40,12 @@ def _selection() -> tuple[bool, bool]:
     if "due" not in args and "work" not in args:
         return True, True
     return args.get("due") == "1", args.get("work") == "1"
+
+
+def _sel_kwargs() -> dict:
+    """due/work query arguments mirroring the current selection."""
+    due_sel, work_sel = _selection()
+    return {"due": 1 if due_sel else 0, "work": 1 if work_sel else 0}
 
 
 def _keyfn(kind: str):
@@ -89,13 +103,49 @@ def view(kind: str, value: str | None):
         work_break = _strip_done(work_break)
     due_count = sum(len(tasks) for _, days in due_break for _, tasks in days)
     work_count = sum(len(tasks) for _, days in work_break for _, tasks in days)
+    month_grid = _month_grid(p, due_break, work_break) if kind == "month" else None
+    queries.prepare_tasks()
 
     return render_template(
         "calendar.html",
         p=p, kind=kind, due_sel=due_sel, work_sel=work_sel,
         due_break=due_break, work_break=work_break,
         due_count=due_count, work_count=work_count,
+        month_grid=month_grid,
     )
+
+
+def _month_grid(p, due_break, work_break) -> dict:
+    """Compact Monday-first month grid used above the detailed list."""
+    due_map = {d: tasks for _, days in due_break for d, tasks in days}
+    work_map = {d: tasks for _, days in work_break for d, tasks in days}
+    first, last = p["start"], p["end"]
+    grid_start = first - dt.timedelta(days=first.weekday())
+    grid_end = last + dt.timedelta(days=6 - last.weekday())
+    today = periods.today()
+    cells = []
+    day = grid_start
+    while day <= grid_end:
+        tasks, seen = [], set()
+        for task in [*due_map.get(day, []), *work_map.get(day, [])]:
+            if task.id not in seen:
+                seen.add(task.id)
+                tasks.append(task)
+        cells.append(
+            {
+                "date": day,
+                "in_month": first <= day <= last,
+                "is_today": day == today,
+                "due": due_map.get(day, []),
+                "work": work_map.get(day, []),
+                "tasks": tasks,
+            }
+        )
+        day += dt.timedelta(days=1)
+    return {
+        "cells": cells,
+        "weekdays": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+    }
 
 
 @bp.route("/jump", methods=("GET",))
@@ -106,13 +156,14 @@ def jump():
     Precedence: a picked date -> day view; otherwise month+year -> month
     view; otherwise just a year -> year view.
     """
+    sel = _sel_kwargs()
     raw = (request.args.get("date") or "").strip()
     if raw:
         try:
             d = periods.parse_day(raw)
         except ValueError:
             abort(400)
-        return redirect(url_for(".view", kind="day", value=d.isoformat()))
+        return redirect(url_for(".view", kind="day", value=d.isoformat(), **sel))
 
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
@@ -121,10 +172,10 @@ def jump():
             d = dt.date(year, month, 1)
         except ValueError:
             abort(400)
-        return redirect(url_for(".view", kind="month", value=periods.month_value(d)))
+        return redirect(url_for(".view", kind="month", value=periods.month_value(d), **sel))
     if year:
-        return redirect(url_for(".view", kind="year", value=f"{year:04d}"))
-    return redirect(url_for(".view", kind="day"))
+        return redirect(url_for(".view", kind="year", value=f"{year:04d}", **sel))
+    return redirect(url_for(".view", kind="day", **sel))
 
 
 @bp.route("/quick-add-date/<int:task_id>", methods=("POST",))
@@ -137,9 +188,7 @@ def quick_add_date(task_id: int):
     instead of erroring out.
     """
     task = Task.query.get_or_404(task_id)
-    try:
-        validate_csrf(request.form.get("csrf_token", ""))
-    except BadRequest:
+    if not csrf_valid(request.form.get("csrf_token", "")):
         abort(400)
     raw = (request.form.get("date") or "").strip()
     if raw:
@@ -147,11 +196,18 @@ def quick_add_date(task_id: int):
             d = periods.parse_day(raw)
         except ValueError:
             flash(f"Could not read date {raw!r}; pick one from the picker.", "error")
-            return redirect(request.form.get("next") or url_for("calendarview.view", kind="day"))
+            return redirect_back(
+                request.form.get("next"), url_for("calendarview.view", kind="day")
+            )
     else:
         d = periods.today()
-    if not TaskDate.query.filter_by(task_id=task.id, date=d).first():
+    label = d.strftime("%a %-d %b %Y")
+    if TaskDate.query.filter_by(task_id=task.id, date=d).first():
+        flash(f"{task.title!r} is already scheduled for {label}.", "ok")
+    else:
         db.session.add(TaskDate(task_id=task.id, date=d))
         db.session.commit()
-        flash(f"Added {d.strftime('%a %-d %b %Y')} as a work-on date for {task.title!r}.", "ok")
-    return redirect(request.form.get("next") or url_for("calendarview.view", kind="day"))
+        flash(f"Added {label} as a work-on date for {task.title!r}.", "ok")
+    return redirect_back(
+        request.form.get("next"), url_for("calendarview.view", kind="day")
+    )

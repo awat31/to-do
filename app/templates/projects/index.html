@@ -13,7 +13,8 @@
   <a class="project-card" style="--chip: {{ color_hex(project.color) }}" href="{{ url_for('projects.detail', project_id=project.id) }}">
     <span class="project-swatch"></span>
     <span class="project-name">{{ project.name }}</span>
-    <span class="project-count">{{ project.task_count }} task{{ '' if project.task_count == 1 else 's' }}</span>
+    {% set count = counts.get(project.id, 0) %}
+    <span class="project-count">{{ count }} task{{ '' if count == 1 else 's' }}</span>
     {% if project.notes %}<span class="project-notes-preview">{{ project.notes | truncate(90) }}</span>{% endif %}
   </a>
   {% endfor %}
