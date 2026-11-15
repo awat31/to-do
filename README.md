@@ -27,8 +27,8 @@ constraints.
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
 - **Accounts** — open registration, private user data, password changes, and
-  self-service account deletion. The admin account can view and delete users.
-  There is no password-reset flow.
+  self-service deletion for regular accounts. The admin account can view and
+  delete other users, but cannot delete itself. There is no password-reset flow.
 - **Mobile and installable shell** — responsive layout and a PWA manifest.
   Static assets are cached and an offline page is shown when navigation cannot
   reach the server; task pages and task data are not available offline.
@@ -105,11 +105,10 @@ Select your username in the navigation to change your password. To log out,
 use **Log out**.
 
 Administrators can select **Users** in the navigation to see registered
-accounts and delete other users. Use the account page's **Delete my account**
-form to delete your own account; enter your current password to confirm. Either
-operation permanently removes that user's tasks, projects, schedules, and
-trash. Deleting the only remaining administrator leaves any other accounts
-without administrator access.
+accounts and delete other users. Use the account page's **Delete my account** form to delete a regular account;
+enter the current password to confirm. Administrators cannot delete themselves.
+Either admin deletion or regular-user self-deletion permanently removes that
+user's tasks, projects, schedules, and trash.
 
 ### Install and offline behavior
 

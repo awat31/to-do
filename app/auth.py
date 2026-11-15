@@ -153,6 +153,10 @@ def delete_user(user_id: int):
 @bp.route("/account/delete", methods=("POST",))
 @login_required
 def delete_account():
+    if current_user.is_admin:
+        flash("Administrator accounts cannot be deleted.", "error")
+        return redirect(url_for("auth.account"))
+
     form = DeleteAccountForm()
     if form.validate_on_submit():
         if current_user.check_password(form.current_password.data):

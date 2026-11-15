@@ -1501,6 +1501,26 @@ def test_admin_user_deletion_requires_csrf(csrf_client, app):
     assert db.session.get(User, user_id) is not None
 
 
+def test_admin_cannot_delete_own_account(app, logged_in):
+    from app.models import User
+
+    admin = User.query.filter_by(username="admin").one()
+    admin_id = admin.id
+    page = logged_in.get("/account").data.decode()
+    assert "Administrator accounts cannot be deleted." in page
+    assert "Delete my account" not in page
+
+    response = logged_in.post(
+        "/account/delete",
+        data={"current_password": "test-password"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Administrator accounts cannot be deleted." in response.data.decode()
+    db.session.expire_all()
+    assert db.session.get(User, admin_id).is_admin
+
+
 def test_admin_delete_user_cascades_through_user_data(app, logged_in):
     import datetime as dt
 

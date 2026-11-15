@@ -14,7 +14,7 @@
         <span class="muted">{{ "Administrator" if user.is_admin else "User" }}</span>
       </div>
       {% if user.id == current_user.id %}
-        <span class="muted">Use your account page to delete your own account.</span>
+        <span class="muted">This account can't be deleted</span>
       {% else %}
         <form method="post" action="{{ url_for('auth.delete_user', user_id=user.id) }}"
               class="inline-form"
