@@ -26,8 +26,9 @@ constraints.
 - **Trash and undo** — deleting a task snapshots its subtree. Restore from the
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
-- **Accounts** — open registration, private user data, and password changes.
-  There are no admin roles or password-reset flow.
+- **Accounts** — open registration, private user data, password changes, and
+  self-service account deletion. The admin account can view and delete users.
+  There is no password-reset flow.
 - **Mobile and installable shell** — responsive layout and a PWA manifest.
   Static assets are cached and an offline page is shown when navigation cannot
   reach the server; task pages and task data are not available offline.
@@ -47,10 +48,10 @@ account.
 
 On a new, migrated database, the app also creates an initial account named
 `admin`. Its generated password is written to `instance/admin_password.txt`,
-unless `TODO_ADMIN_PASSWORD` was set before startup. This account has no
-additional privileges. Sign in and change its password from the account link
-in the top navigation; keep the password file private and delete it after
-noting the generated password.
+unless `TODO_ADMIN_PASSWORD` was set before startup. This account can manage
+users. Sign in and change its password from the account link in the top
+navigation; keep the password file private and delete it after noting the
+generated password.
 
 ### Dashboard and tasks
 
@@ -103,6 +104,13 @@ are pruned. Deleting a batch or emptying Trash is permanent.
 Select your username in the navigation to change your password. To log out,
 use **Log out**.
 
+Administrators can select **Users** in the navigation to see registered
+accounts and delete other users. Use the account page's **Delete my account**
+form to delete your own account; enter your current password to confirm. Either
+operation permanently removes that user's tasks, projects, schedules, and
+trash. Deleting the only remaining administrator leaves any other accounts
+without administrator access.
+
 ### Install and offline behavior
 
 On browsers that support installation, use the browser's install option to add
@@ -133,6 +141,9 @@ Apply the database migrations:
 ```bash
 .venv/bin/flask --app wsgi db upgrade
 ```
+
+The user-management migration marks the existing case-insensitive `admin`
+account as an administrator; other existing accounts remain regular users.
 
 Run the app with Gunicorn:
 

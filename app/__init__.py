@@ -71,7 +71,7 @@ def _ensure_admin(app: Flask) -> None:
         if not password:
             password = secrets.token_urlsafe(14)
             generated = True
-        user = User(username="admin")
+        user = User(username="admin", is_admin=True)
         user.set_password(password)
         db.session.add(user)
         try:

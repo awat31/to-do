@@ -58,6 +58,12 @@ class ChangePasswordForm(FlaskForm):
     )
 
 
+class DeleteAccountForm(FlaskForm):
+    current_password = PasswordField(
+        "Current password", validators=(DataRequired(),),
+    )
+
+
 class ProjectForm(FlaskForm):
     name = StringField("Name", validators=(DataRequired(), Length(max=120)))
     color = SelectField("Colour", choices=(), coerce=str)

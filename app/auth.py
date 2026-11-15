@@ -3,6 +3,7 @@ import math
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     redirect,
@@ -14,7 +15,7 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import IntegrityError
 
-from .forms import ChangePasswordForm, LoginForm, SignupForm
+from .forms import ChangePasswordForm, DeleteAccountForm, LoginForm, SignupForm
 from .models import User, db, utcnow
 from .utils import safe_next
 
@@ -101,6 +102,7 @@ def login():
 @login_required
 def account():
     form = ChangePasswordForm()
+    delete_form = DeleteAccountForm()
     if form.validate_on_submit():
         if not current_user.check_password(form.current_password.data):
             form.current_password.errors.append("Current password is incorrect.")
@@ -110,7 +112,63 @@ def account():
             db.session.commit()
             flash("Password changed.", "ok")
             return redirect(url_for("auth.account"))
-    return render_template("auth/account.html", form=form)
+    return render_template("auth/account.html", form=form, delete_form=delete_form)
+
+
+def _require_admin() -> None:
+    if not current_user.is_admin:
+        abort(403)
+
+
+def _delete_user(user_id: int) -> None:
+    db.session.execute(User.__table__.delete().where(User.id == user_id))
+    db.session.commit()
+
+
+@bp.route("/admin/users")
+@login_required
+def admin_users():
+    _require_admin()
+    users = User.query.order_by(User.username_key).all()
+    return render_template("auth/users.html", users=users)
+
+
+@bp.route("/admin/users/<int:user_id>/delete", methods=("POST",))
+@login_required
+def delete_user(user_id: int):
+    _require_admin()
+    user = db.session.get(User, user_id)
+    if user is None:
+        abort(404)
+    if user.id == current_user.id:
+        flash("Use your account page to delete your own account.", "error")
+        return redirect(url_for("auth.admin_users"))
+
+    username = user.username
+    _delete_user(user.id)
+    flash(f"Deleted {username!r} and all of their data.", "ok")
+    return redirect(url_for("auth.admin_users"))
+
+
+@bp.route("/account/delete", methods=("POST",))
+@login_required
+def delete_account():
+    form = DeleteAccountForm()
+    if form.validate_on_submit():
+        if current_user.check_password(form.current_password.data):
+            username = current_user.username
+            _delete_user(current_user.id)
+            session.clear()
+            logout_user()
+            flash(f"Account {username!r} and all of its data were deleted.", "ok")
+            return redirect(url_for("auth.login"))
+        form.current_password.errors.append("Current password is incorrect.")
+
+    return render_template(
+        "auth/account.html",
+        form=ChangePasswordForm(),
+        delete_form=form,
+    ), 400
 
 
 @bp.route("/logout", methods=("POST",))

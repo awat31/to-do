@@ -24,6 +24,9 @@
         <a href="{{ url_for('tasks.index') }}" class="{{ 'active' if request.blueprint == 'tasks' and request.endpoint != 'tasks.trash' }}">Tasks</a>
         <a href="{{ url_for('projects.index') }}" class="{{ 'active' if request.blueprint == 'projects' }}">Projects</a>
         <a href="{{ url_for('tasks.trash') }}" class="{{ 'active' if request.endpoint == 'tasks.trash' }}">Trash</a>
+        {% if current_user.is_admin %}
+          <a href="{{ url_for('auth.admin_users') }}" class="{{ 'active' if request.endpoint in ('auth.admin_users', 'auth.delete_user') }}">Users</a>
+        {% endif %}
       </nav>
       <div class="account-nav">
         <a class="account-link" href="{{ url_for('auth.account') }}">{{ current_user.username }}</a>

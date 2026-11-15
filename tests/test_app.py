@@ -1125,6 +1125,7 @@ def test_signup_creates_hashed_password_and_logs_in(app):
     client = _signup(app, username="Alice", password="alice-password")
 
     user = User.query.filter_by(username="Alice").one()
+    assert not user.is_admin
     assert user.password_hash != "alice-password"
     assert "alice-password" not in user.password_hash
     assert user.check_password("alice-password")
@@ -1462,3 +1463,137 @@ def test_account_changes_password(app):
     )
     assert new_login.status_code == 302
     assert new_login.headers["Location"] == "/"
+
+
+def test_admin_user_management_is_admin_only(app, logged_in):
+    from app.models import User
+
+    alice = _signup(app)
+    alice_user = User.query.filter_by(username="alice").one()
+    admin = User.query.filter_by(username="admin").one()
+    assert admin.is_admin
+    assert not alice_user.is_admin
+
+    admin_page = logged_in.get("/admin/users")
+    assert admin_page.status_code == 200
+    assert "alice" in admin_page.data.decode()
+    assert 'href="/admin/users"' in logged_in.get("/").data.decode()
+
+    assert 'href="/admin/users"' not in alice.get("/").data.decode()
+    assert alice.get("/admin/users").status_code == 403
+    assert alice.post(f"/admin/users/{admin.id}/delete").status_code == 403
+    self_delete = logged_in.post(f"/admin/users/{admin.id}/delete")
+    assert self_delete.status_code == 302
+    assert self_delete.headers["Location"].endswith("/admin/users")
+    assert db.session.get(User, admin.id) is not None
+
+
+def test_admin_user_deletion_requires_csrf(csrf_client, app):
+    from app.models import User, db
+
+    alice = User(username="csrf-user", password_hash="unused")
+    db.session.add(alice)
+    db.session.commit()
+    user_id = alice.id
+
+    response = csrf_client.post(f"/admin/users/{user_id}/delete")
+    assert response.status_code == 400
+    assert db.session.get(User, user_id) is not None
+
+
+def test_admin_delete_user_cascades_through_user_data(app, logged_in):
+    import datetime as dt
+
+    from app.models import DeletedBatch, Project, Task, TaskDate, User
+
+    alice = _signup(app)
+    alice_user = User.query.filter_by(username="alice").one()
+    admin_task = _create_task(logged_in, title="Keep admin task")
+
+    alice.post("/projects/new", data={"name": "Alice project", "color": "pink"})
+    project = Project.query.filter_by(name="Alice project").one()
+    alice_task = _create_task(
+        alice, title="Alice task", project=project.id,
+    )
+    db.session.add(TaskDate(task_id=alice_task.id, date=dt.date(2026, 4, 1)))
+    batch = DeletedBatch(
+        user_id=alice_user.id,
+        summary="Alice deleted task",
+        payload='{"tasks":[]}',
+    )
+    db.session.add(batch)
+    db.session.commit()
+    alice_id = alice_user.id
+    project_id = project.id
+    task_id = alice_task.id
+    batch_id = batch.id
+    admin_task_id = admin_task.id
+
+    resp = logged_in.post(
+        f"/admin/users/{alice_id}/delete",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "all of their data" in resp.data.decode()
+
+    db.session.expire_all()
+    assert db.session.get(User, alice_id) is None
+    assert db.session.get(Project, project_id) is None
+    assert db.session.get(Task, task_id) is None
+    assert TaskDate.query.filter_by(task_id=task_id).count() == 0
+    assert db.session.get(DeletedBatch, batch_id) is None
+    assert db.session.get(Task, admin_task_id) is not None
+
+
+def test_user_can_delete_only_their_own_account_and_data(app):
+    import datetime as dt
+
+    from app.models import DeletedBatch, Project, Task, TaskDate, User
+
+    alice = _signup(app)
+    alice_user = User.query.filter_by(username="alice").one()
+    admin = User.query.filter_by(username="admin").one()
+    admin_task = Task(user_id=admin.id, title="Keep admin task")
+    db.session.add(admin_task)
+
+    alice.post("/projects/new", data={"name": "Alice private", "color": "pink"})
+    project = Project.query.filter_by(name="Alice private").one()
+    alice_task = _create_task(alice, title="Alice private task", project=project.id)
+    db.session.add(TaskDate(task_id=alice_task.id, date=dt.date(2026, 4, 2)))
+    batch = DeletedBatch(
+        user_id=alice_user.id,
+        summary="Alice deleted task",
+        payload='{"tasks":[]}',
+    )
+    db.session.add(batch)
+    db.session.commit()
+    alice_id = alice_user.id
+    project_id = project.id
+    task_id = alice_task.id
+    batch_id = batch.id
+    admin_task_id = admin_task.id
+
+    wrong_password = alice.post(
+        "/account/delete",
+        data={"current_password": "wrong-password"},
+    )
+    assert wrong_password.status_code == 400
+    assert "Current password is incorrect." in wrong_password.data.decode()
+    assert db.session.get(User, alice_id) is not None
+
+    resp = alice.post(
+        "/account/delete",
+        data={"current_password": "alice-password"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "all of its data were deleted" in resp.data.decode()
+    assert alice.get("/").status_code == 302
+
+    db.session.expire_all()
+    assert db.session.get(User, alice_id) is None
+    assert db.session.get(Project, project_id) is None
+    assert db.session.get(Task, task_id) is None
+    assert TaskDate.query.filter_by(task_id=task_id).count() == 0
+    assert db.session.get(DeletedBatch, batch_id) is None
+    assert db.session.get(Task, admin_task_id) is not None

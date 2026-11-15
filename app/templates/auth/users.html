@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Users · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Users</h1>
+</div>
+<p class="hint">Deleting a user permanently removes their tasks, projects, schedules, and trash.</p>
+
+<div class="trash-list">
+  {% for user in users %}
+    <div class="trash-item">
+      <div>
+        <strong>{{ user.username }}</strong>
+        <span class="muted">{{ "Administrator" if user.is_admin else "User" }}</span>
+      </div>
+      {% if user.id == current_user.id %}
+        <span class="muted">Use your account page to delete your own account.</span>
+      {% else %}
+        <form method="post" action="{{ url_for('auth.delete_user', user_id=user.id) }}"
+              class="inline-form"
+              data-confirm="Permanently delete {{ user.username }} and all of their data?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm" type="submit">Delete user</button>
+        </form>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="empty big">No users found.</p>
+  {% endfor %}
+</div>
+{% endblock %}

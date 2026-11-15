@@ -4,7 +4,7 @@ import sqlite3
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import ForeignKeyConstraint, UniqueConstraint, event, text
+from sqlalchemy import ForeignKeyConstraint, UniqueConstraint, event, false, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, validates
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -64,6 +64,7 @@ class User(db.Model, UserMixin, TimestampMixin):
     username = db.Column(db.String(80), unique=True, nullable=False)
     username_key = db.Column(db.String(255), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False, server_default=false())
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
 
