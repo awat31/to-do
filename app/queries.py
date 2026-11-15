@@ -1,9 +1,12 @@
 """Query helpers shared by the calendar views, dashboard and project pages.
 
-The app is single-user but task trees can be deep. Rendering every card used
-to trigger dozens of lazy loads per task; the helpers at the bottom of this
-module load the relationships in a couple of queries and cache breadcrumbs,
-sub-task progress and child lists directly on the ORM instances.
+Task trees can be deep. Rendering every card used to trigger dozens of lazy
+loads per task; the helpers at the bottom of this module load the
+relationships in a couple of queries and cache breadcrumbs, sub-task progress
+and child lists directly on the ORM instances.
+
+Every query requires a ``user_id`` so one user's tasks can never leak into
+another user's dashboard, calendar, project list or search results.
 """
 import datetime as dt
 from collections import defaultdict
@@ -13,18 +16,32 @@ from sqlalchemy.orm import selectinload
 from .models import Task, TaskDate, _task_version
 
 
-def due_in(start: dt.date, end: dt.date, include_done: bool = True) -> list[Task]:
-    """Tasks with a due date inside [start, end]."""
-    query = Task.query.filter(Task.due_date >= start, Task.due_date <= end)
+def due_in(
+    start: dt.date,
+    end: dt.date,
+    include_done: bool = True,
+    *,
+    user_id: int,
+) -> list[Task]:
+    """A user's tasks with a due date inside [start, end]."""
+    query = Task.query.filter(
+        Task.user_id == user_id,
+        Task.due_date >= start,
+        Task.due_date <= end,
+    )
     if not include_done:
         query = query.filter(Task.done.is_(False))
     return query.order_by(Task.due_date, Task.title).all()
 
 
 def work_rows(
-    start: dt.date, end: dt.date, include_done: bool = True
+    start: dt.date,
+    end: dt.date,
+    include_done: bool = True,
+    *,
+    user_id: int,
 ) -> list[tuple[Task, dt.date]]:
-    """(task, work_date) pairs for work dates inside [start, end].
+    """(task, work_date) pairs for a user's dates inside [start, end].
 
     A task scheduled on several days appears once per day, which is what the
     calendar grouping needs.
@@ -32,7 +49,11 @@ def work_rows(
     query = (
         Task.query
         .join(TaskDate, Task.id == TaskDate.task_id)
-        .filter(TaskDate.date >= start, TaskDate.date <= end)
+        .filter(
+            Task.user_id == user_id,
+            TaskDate.date >= start,
+            TaskDate.date <= end,
+        )
     )
     if not include_done:
         query = query.filter(Task.done.is_(False))
@@ -44,19 +65,19 @@ def work_rows(
     )
 
 
-def due_groups(start: dt.date, end: dt.date, key=None) -> dict:
-    """Group due-in-period tasks by key(date); default the date itself."""
+def due_groups(start: dt.date, end: dt.date, key=None, *, user_id: int) -> dict:
+    """Group a user's due-in-period tasks by key(date); default the date."""
     key = key or (lambda d: d)
     groups: dict = defaultdict(list)
-    for t in due_in(start, end):
+    for t in due_in(start, end, user_id=user_id):
         groups[key(t.due_date)].append(t)
     return groups
 
 
-def work_groups(start: dt.date, end: dt.date, key=None) -> dict:
+def work_groups(start: dt.date, end: dt.date, key=None, *, user_id: int) -> dict:
     key = key or (lambda d: d)
     groups: dict = defaultdict(list)
-    for task, d in work_rows(start, end):
+    for task, d in work_rows(start, end, user_id=user_id):
         groups[key(d)].append(task)
     return groups
 
@@ -92,23 +113,34 @@ def _children_of(task: Task) -> list[Task]:
 # Batch preparation (query-count friendly)
 # ---------------------------------------------------------------------------
 
-def load_all_tasks() -> list[Task]:
-    """Load every task plus its project and work dates in three queries."""
+def load_all_tasks(user_id: int) -> list[Task]:
+    """Load one user's tasks plus projects and work dates in three queries."""
     return (
         Task.query
+        .filter(Task.user_id == user_id)
         .options(selectinload(Task.project), selectinload(Task.work_dates))
         .all()
     )
 
 
-def prepare_tasks(tasks: list[Task] | None = None) -> list[Task]:
+def prepare_tasks(
+    tasks: list[Task] | None = None,
+    *,
+    user_id: int | None = None,
+) -> list[Task]:
     """Attach child lists, breadcrumbs and progress to every task.
 
     All tasks are loaded once so breadcrumbs and roll-ups never need a
-    per-card query. A caller that already ran ``load_all_tasks()`` can pass
-    the result in to avoid loading the same rows twice.
+    per-card query. A caller that already ran ``load_all_tasks(user_id)`` can
+    pass the result in to avoid loading the same rows twice. When loading
+    here, ``user_id`` is mandatory so another user's tree cannot leak in.
     """
-    all_tasks = load_all_tasks() if tasks is None else tasks
+    if tasks is None:
+        if user_id is None:
+            raise ValueError("user_id is required when loading tasks")
+        all_tasks = load_all_tasks(user_id)
+    else:
+        all_tasks = tasks
     by_id = {t.id: t for t in all_tasks}
     children: dict[int, list[Task]] = defaultdict(list)
     for t in all_tasks:

@@ -17,10 +17,11 @@ from flask import (
     session,
     url_for,
 )
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from . import periods, queries
-from .models import Task, TaskDate, db
+from .access import task_or_404
+from .models import TaskDate, db
 from .utils import csrf_valid, redirect_back
 
 bp = Blueprint("calendarview", __name__, url_prefix="/calendar")
@@ -54,7 +55,9 @@ def _keyfn(kind: str):
 
 def _due_breakdown(kind: str, start, end, keyfn) -> list:
     """(group_key, [(date, tasks), ...]) sorted by group then date."""
-    per_date = queries.due_groups(start, end)  # date -> tasks
+    per_date = queries.due_groups(
+        start, end, user_id=current_user.id
+    )  # date -> tasks
     grouped: dict = {}
     for d, tasks in per_date.items():
         grouped.setdefault(keyfn(d), {}).setdefault(d, []).extend(tasks)
@@ -62,7 +65,9 @@ def _due_breakdown(kind: str, start, end, keyfn) -> list:
 
 
 def _work_breakdown(kind: str, start, end, keyfn) -> list:
-    per_date = queries.work_groups(start, end)  # date -> tasks
+    per_date = queries.work_groups(
+        start, end, user_id=current_user.id
+    )  # date -> tasks
     grouped: dict = {}
     for d, tasks in per_date.items():
         grouped.setdefault(keyfn(d), {}).setdefault(d, []).extend(tasks)
@@ -104,7 +109,7 @@ def view(kind: str, value: str | None):
     due_count = sum(len(tasks) for _, days in due_break for _, tasks in days)
     work_count = sum(len(tasks) for _, days in work_break for _, tasks in days)
     month_grid = _month_grid(p, due_break, work_break) if kind == "month" else None
-    queries.prepare_tasks()
+    queries.prepare_tasks(user_id=current_user.id)
 
     return render_template(
         "calendar.html",
@@ -187,7 +192,7 @@ def quick_add_date(task_id: int):
     dashboard); an unparseable value redirects back with a flash message
     instead of erroring out.
     """
-    task = Task.query.get_or_404(task_id)
+    task = task_or_404(task_id)
     if not csrf_valid(request.form.get("csrf_token", "")):
         abort(400)
     raw = (request.form.get("date") or "").strip()

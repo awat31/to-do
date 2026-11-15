@@ -63,6 +63,10 @@ class User(db.Model, UserMixin, TimestampMixin):
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
 
+    projects = db.relationship("Project", back_populates="user")
+    tasks = db.relationship("Task", back_populates="user")
+    deleted_batches = db.relationship("DeletedBatch", back_populates="user")
+
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
 
@@ -90,10 +94,15 @@ class Project(db.Model, TimestampMixin):
     __tablename__ = "project"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
     name = db.Column(db.String(120), nullable=False)
     color = db.Column(db.String(20), nullable=False, default="blue")
     notes = db.Column(db.Text, nullable=False, default="")
 
+    user = db.relationship("User", back_populates="projects")
     tasks = db.relationship(
         "Task", back_populates="project", lazy="dynamic",
         order_by="Task.position, Task.id",
@@ -137,6 +146,10 @@ class Task(db.Model, TimestampMixin):
     __tablename__ = "task"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
     title = db.Column(db.String(255), nullable=False)
     notes = db.Column(db.Text, nullable=False, default="")
     done = db.Column(db.Boolean, nullable=False, default=False, index=True)
@@ -154,6 +167,7 @@ class Task(db.Model, TimestampMixin):
         db.Integer, db.ForeignKey("task.id", ondelete="CASCADE"), nullable=True, index=True,
     )
 
+    user = db.relationship("User", back_populates="tasks")
     project = db.relationship("Project", back_populates="tasks")
     parent = db.relationship(
         "Task", remote_side=[id], foreign_keys=[parent_id],
@@ -185,7 +199,7 @@ class Task(db.Model, TimestampMixin):
             return self._ancestors_cache
         chain, node = [], self.parent
         seen = set()
-        while node is not None and node.id not in seen:
+        while node is not None and node.id not in seen and node.user_id == self.user_id:
             seen.add(node.id)
             chain.append(node)
             node = node.parent
@@ -207,7 +221,10 @@ class Task(db.Model, TimestampMixin):
         ids = self.descendant_ids()
         if not ids:
             return None
-        tasks = Task.query.filter(Task.id.in_([self.id, *ids])).all()
+        tasks = Task.query.filter(
+            Task.id.in_([self.id, *ids]),
+            Task.user_id == self.user_id,
+        ).all()
         leaves = [t for t in tasks if not t.children]
         if not leaves:
             return None
@@ -218,11 +235,15 @@ class Task(db.Model, TimestampMixin):
         ids = self.descendant_ids()
         if not ids:
             return [self]
-        return Task.query.filter(Task.id.in_([self.id, *ids])).all()
+        return Task.query.filter(
+            Task.id.in_([self.id, *ids]),
+            Task.user_id == self.user_id,
+        ).all()
 
     def next_sibling_position(self) -> int:
         q = db.session.query(db.func.max(Task.position)).filter(
             Task.parent_id == self.parent_id,
+            Task.user_id == self.user_id,
         )
         if self.project_id is not None:
             q = q.filter(Task.project_id == self.project_id)
@@ -240,8 +261,14 @@ class DeletedBatch(db.Model, TimestampMixin):
     __tablename__ = "deleted_batch"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
     summary = db.Column(db.String(255), nullable=False, default="")
     payload = db.Column(db.Text, nullable=False, default="")
+
+    user = db.relationship("User", back_populates="deleted_batches")
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<DeletedBatch {self.id} {self.summary!r}>"

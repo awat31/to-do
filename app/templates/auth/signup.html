@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Create account · To-Do{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <form method="post" class="stack form-card auth-card">
+    {{ form.hidden_tag() }}
+    <h1>Create account</h1>
+    <p class="muted">Your tasks and projects are private to your account.</p>
+    <div class="field">
+      {{ form.username.label }} {{ form.username(class="input", autofocus=True, autocomplete="username") }}
+      {% for e in form.username.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    </div>
+    <div class="field">
+      {{ form.password.label }} {{ form.password(class="input", autocomplete="new-password") }}
+      {% for e in form.password.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      <span class="hint">At least 8 characters.</span>
+    </div>
+    <button class="btn btn-primary" type="submit">Sign up</button>
+    <p class="auth-alt">Already have an account? <a href="{{ url_for('auth.login') }}">Log in</a>.</p>
+  </form>
+</div>
+{% endblock %}

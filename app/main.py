@@ -2,7 +2,7 @@
 import datetime as dt
 
 from flask import Blueprint, render_template, request, session, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from . import periods, queries
 from .models import Task, TaskDate, db
@@ -25,12 +25,16 @@ def dashboard():
     month_end = t.replace(day=28) + dt.timedelta(days=4)
     month_end = month_end.replace(day=1) - dt.timedelta(days=1)
 
-    due_today = queries.due_groups(t, t).get(t, [])
+    due_today = queries.due_groups(
+        t, t, user_id=current_user.id
+    ).get(t, [])
     if hide:
         due_today = [task for task in due_today if not task.done]
     due_ids = {task.id for task in due_today}
 
-    work_all = queries.work_groups(t, t).get(t, [])
+    work_all = queries.work_groups(
+        t, t, user_id=current_user.id
+    ).get(t, [])
     # Hide tasks already shown under 'Due today' so the list and its count
     # always match; respect the hide-completed preference.
     work_today = [
@@ -38,20 +42,30 @@ def dashboard():
         if task.id not in due_ids and not (hide and task.done)
     ]
 
-    week_due = sorted(queries.due_groups(t + dt.timedelta(days=1), week_end).items())
-    month_due = sorted(queries.due_groups(week_end + dt.timedelta(days=1), month_end).items())
+    week_due = sorted(
+        queries.due_groups(
+            t + dt.timedelta(days=1), week_end, user_id=current_user.id
+        ).items()
+    )
+    month_due = sorted(
+        queries.due_groups(
+            week_end + dt.timedelta(days=1), month_end, user_id=current_user.id
+        ).items()
+    )
     if hide:
         week_due = _prune_empty([(d, [x for x in ts if not x.done]) for d, ts in week_due])
         month_due = _prune_empty([(d, [x for x in ts if not x.done]) for d, ts in month_due])
 
-    queries.prepare_tasks()
+    queries.prepare_tasks(user_id=current_user.id)
 
     overdue = Task.query.filter(
+        Task.user_id == current_user.id,
         Task.done == False,
         Task.due_date != None,
         Task.due_date < t,
     ).count()
     unscheduled = Task.query.filter(
+        Task.user_id == current_user.id,
         Task.done == False,
         Task.due_date == None,
         ~Task.id.in_(db.session.query(TaskDate.task_id)),

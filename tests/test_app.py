@@ -320,26 +320,23 @@ def test_dashboard_renders_with_upcoming_tasks(logged_in):
     assert "Later" in page and task.due_date.strftime("%a %-d %b %Y") in page
 
 
-def test_admin_password_syncs_from_env(app):
-    """Regression: .env password must update an existing admin account."""
-    import os
-
+def test_admin_password_change_survives_restart(app):
+    """A password changed in the app must not be reset from .env on restart."""
     from app import _ensure_admin
     from app.models import User
-    user = User.query.filter_by(username="admin").first()
-    assert user.check_password("test-password")
 
-    os.environ["TODO_ADMIN_PASSWORD"] = "brand-new-secret"
-    try:
-        _ensure_admin(app)
-        db.session.expire_all()
-        assert User.query.filter_by(username="admin").first().check_password("brand-new-secret")
-        assert not User.query.filter_by(username="admin").first().check_password("test-password")
-    finally:
-        os.environ["TODO_ADMIN_PASSWORD"] = "test-password"  # restore for other tests
-        user = User.query.filter_by(username="admin").first()
-        user.set_password("test-password")
-        db.session.commit()
+    user = User.query.filter_by(username="admin").first()
+    user.set_password("changed-in-app")
+    db.session.commit()
+
+    _ensure_admin(app)
+    db.session.expire_all()
+    user = User.query.filter_by(username="admin").first()
+    assert user.check_password("changed-in-app")
+    assert not user.check_password("test-password")
+
+    user.set_password("test-password")
+    db.session.commit()
 
 
 def test_calendar_jump_day_week_month_year(logged_in):
@@ -861,14 +858,20 @@ def test_task_index_query_count_stays_bounded(logged_in):
     """Rendering a full tree must not issue a query per card."""
     from sqlalchemy import event
 
-    from app.models import Task, TaskDate
+    from app.models import Task, TaskDate, User
 
+    admin_id = User.query.filter_by(username="admin").one().id
     for i in range(6):
-        root = Task(title=f"Root {i}", position=i)
+        root = Task(user_id=admin_id, title=f"Root {i}", position=i)
         db.session.add(root)
         db.session.flush()
         for j in range(3):
-            child = Task(title=f"Child {i}-{j}", parent_id=root.id, position=j)
+            child = Task(
+                user_id=admin_id,
+                title=f"Child {i}-{j}",
+                parent_id=root.id,
+                position=j,
+            )
             db.session.add(child)
             db.session.flush()
             db.session.add(TaskDate(task_id=child.id, date=__import__("datetime").date(2026, 3, 1)))
@@ -1026,3 +1029,296 @@ def test_timezone_setting_drives_today(app):
     expected = dt.datetime.now(ZoneInfo("Pacific/Kiritimati")).date()
     assert periods.today() == expected
     app.config["TIMEZONE"] = "UTC"
+
+
+# --- multi-user accounts and isolation ----------------------------------
+
+def _signup(app, username="alice", password="alice-password"):
+    """Register a new user in a fresh client; signup logs them in."""
+    client = app.test_client()
+    resp = client.post(
+        "/signup",
+        data={"username": username, "password": password},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    return client
+
+
+def test_signup_creates_hashed_password_and_logs_in(app):
+    from app.models import User
+
+    client = _signup(app, username="Alice", password="alice-password")
+
+    user = User.query.filter_by(username="Alice").one()
+    assert user.password_hash != "alice-password"
+    assert "alice-password" not in user.password_hash
+    assert user.check_password("alice-password")
+
+    # Signup signs the new account in.
+    assert client.get("/").status_code == 200
+    assert 'href="/account"' in client.get("/").data.decode()
+
+
+def test_signup_rejects_duplicate_username_case_insensitively(app):
+    from app.models import User
+
+    _signup(app, username="Alice", password="alice-password")
+    second = app.test_client()
+    resp = second.post(
+        "/signup",
+        data={"username": "alice", "password": "another-password"},
+        follow_redirects=True,
+    )
+    assert "That username is already taken." in resp.data.decode()
+    assert User.query.filter_by(username="alice").first() is None
+    assert User.query.count() == 2  # seeded admin + Alice
+
+
+def test_signup_rejects_short_password(app):
+    from app.models import User
+
+    client = app.test_client()
+    resp = client.post(
+        "/signup",
+        data={"username": "shorty", "password": "1234567"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "at least 8 characters" in resp.data.decode().lower()
+    assert User.query.filter_by(username="shorty").first() is None
+
+
+def test_login_username_is_case_insensitive(app):
+    _signup(app, username="Alice", password="alice-password")
+
+    fresh = app.test_client()
+    resp = fresh.post(
+        "/login", data={"username": "aLiCe", "password": "alice-password"}
+    )
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
+
+
+def test_created_tasks_projects_and_trash_are_owned_by_creator(app):
+    from app.models import DeletedBatch, Project, Task, User
+
+    alice = _signup(app)
+    alice_user = User.query.filter_by(username="alice").one()
+
+    task = _create_task(alice, title="Owned by alice")
+    alice.post("/projects/new", data={"name": "Alice owned", "color": "pink"})
+    project = Project.query.filter_by(name="Alice owned").one()
+    alice.post(f"/tasks/{task.id}/delete")
+    batch = DeletedBatch.query.one()
+
+    assert task.user_id == alice_user.id
+    assert project.user_id == alice_user.id
+    assert batch.user_id == alice_user.id
+    assert task.user_id != User.query.filter_by(username="admin").one().id
+
+
+def test_users_cannot_see_each_others_tasks_or_projects(app, logged_in):
+    import json
+
+    from app.models import Project
+
+    admin_task = _create_task(logged_in, title="Admin secret", due="2026-04-01")
+    logged_in.post("/projects/new", data={"name": "Admin project", "color": "blue"})
+    admin_project = Project.query.filter_by(name="Admin project").one()
+
+    alice = _signup(app)
+    alice_task = _create_task(alice, title="Alice secret", due="2026-04-02")
+    alice.post("/projects/new", data={"name": "Alice project", "color": "pink"})
+
+    admin_pages = (
+        "/",
+        "/tasks/",
+        "/projects/",
+        "/calendar/day/2026-04-01?due=1&work=0",
+        "/calendar/month/2026-04?due=1&work=0",
+    )
+    for url in admin_pages:
+        page = logged_in.get(url).data.decode()
+        assert "Alice secret" not in page, url
+        assert "Alice project" not in page, url
+
+    alice_pages = (
+        "/",
+        "/tasks/",
+        "/projects/",
+        "/calendar/day/2026-04-02?due=1&work=0",
+        "/calendar/month/2026-04?due=1&work=0",
+    )
+    for url in alice_pages:
+        page = alice.get(url).data.decode()
+        assert "Admin secret" not in page, url
+        assert "Admin project" not in page, url
+
+    admin_results = json.loads(logged_in.get("/tasks/search").data)["results"]
+    alice_results = json.loads(alice.get("/tasks/search").data)["results"]
+    assert "Alice secret" not in [r["title"] for r in admin_results]
+    assert "Admin secret" not in [r["title"] for r in alice_results]
+
+    # The admin's pre-existing data did not disappear when a user signed up.
+    assert "Admin secret" in logged_in.get("/").data.decode()
+    assert "Alice secret" in alice.get("/").data.decode()
+    assert admin_project.id != Project.query.filter_by(name="Alice project").one().id
+    assert admin_task.user_id != alice_task.user_id
+
+
+def test_cross_user_records_return_404(app, logged_in):
+    from app.models import Project, Task
+
+    admin_task = _create_task(logged_in, title="Admin owned")
+    logged_in.post("/projects/new", data={"name": "Admin owned project", "color": "blue"})
+    admin_project = Project.query.filter_by(name="Admin owned project").one()
+
+    alice = _signup(app)
+    attempts = (
+        ("get", f"/tasks/{admin_task.id}"),
+        ("get", f"/tasks/{admin_task.id}/edit"),
+        ("post", f"/tasks/{admin_task.id}/toggle"),
+        ("post", f"/tasks/{admin_task.id}/delete"),
+        ("post", f"/tasks/{admin_task.id}/notes"),
+        ("post", f"/tasks/{admin_task.id}/subtasks"),
+        ("post", f"/tasks/{admin_task.id}/reassign"),
+        ("post", f"/tasks/{admin_task.id}/reschedule"),
+        ("post", f"/tasks/{admin_task.id}/complete-subtree"),
+        ("post", f"/calendar/quick-add-date/{admin_task.id}"),
+        ("get", f"/projects/{admin_project.id}"),
+        ("get", f"/projects/{admin_project.id}/edit"),
+        ("post", f"/projects/{admin_project.id}/delete"),
+        ("post", f"/projects/{admin_project.id}/notes"),
+        ("post", f"/projects/{admin_project.id}/add-task"),
+    )
+    for method, url in attempts:
+        resp = getattr(alice, method)(url)
+        assert resp.status_code == 404, (method, url, resp.status_code)
+
+    db.session.expire_all()
+    assert db.session.get(Task, admin_task.id) is not None
+    assert db.session.get(Task, admin_task.id).done is False
+    assert db.session.get(Project, admin_project.id) is not None
+
+
+def test_cross_user_reorder_target_is_rejected(app, logged_in):
+    admin_task = _create_task(logged_in, title="Admin reorder target")
+    alice = _signup(app)
+    alice_task = _create_task(alice, title="Alice reorder source")
+
+    resp = alice.post(
+        f"/tasks/{alice_task.id}/reorder",
+        json={"target_id": admin_task.id},
+    )
+    assert resp.status_code == 404
+
+
+def test_cannot_attach_task_to_another_users_project_or_parent(app, logged_in):
+    from app.models import Project, Task
+
+    admin_project = Project.query.filter_by(name="Admin attach project").first()
+    logged_in.post("/projects/new", data={"name": "Admin attach project", "color": "blue"})
+    admin_project = Project.query.filter_by(name="Admin attach project").one()
+    admin_parent = _create_task(logged_in, title="Admin parent")
+
+    alice = _signup(app)
+    base = {"notes": "", "due_date": "", "recurrence": "none"}
+
+    resp = alice.post(
+        "/tasks/new",
+        data={**base, "title": "Sneaky project task", "project_id": admin_project.id,
+              "parent_id": 0},
+    )
+    assert resp.status_code == 200
+    assert Task.query.filter_by(title="Sneaky project task").first() is None
+
+    resp = alice.post(
+        "/tasks/new",
+        data={**base, "title": "Sneaky parent task", "project_id": 0,
+              "parent_id": admin_parent.id},
+    )
+    assert resp.status_code == 200
+    assert Task.query.filter_by(title="Sneaky parent task").first() is None
+
+    alice_task = _create_task(alice, title="Alice movable")
+    resp = alice.post(
+        f"/tasks/{alice_task.id}/reassign",
+        data={"project_id": admin_project.id},
+    )
+    assert resp.status_code == 400
+    db.session.expire_all()
+    assert db.session.get(Task, alice_task.id).project_id is None
+
+
+def test_trash_is_per_user(app, logged_in):
+    from app.models import DeletedBatch
+
+    task = _create_task(logged_in, title="Admin trash item")
+    logged_in.post(f"/tasks/{task.id}/delete")
+    batch = DeletedBatch.query.one()
+
+    alice = _signup(app)
+    page = alice.get("/tasks/trash").data.decode()
+    assert "Admin trash item" not in page
+    assert alice.post(f"/tasks/trash/{batch.id}/restore").status_code == 404
+    assert alice.post(f"/tasks/trash/{batch.id}/purge").status_code == 404
+
+    # Emptying Alice's trash must not remove the admin's batch.
+    assert alice.post("/tasks/trash/empty").status_code == 302
+    db.session.expire_all()
+    assert db.session.get(DeletedBatch, batch.id) is not None
+    assert "Admin trash item" in logged_in.get("/tasks/trash").data.decode()
+
+
+def test_account_page_requires_login(client):
+    resp = client.get("/account")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+
+def test_account_changes_password(app):
+    from app.models import User
+
+    alice = _signup(app, username="alice", password="old-password")
+
+    resp = alice.post(
+        "/account",
+        data={
+            "current_password": "wrong-password",
+            "new_password": "new-password-1",
+            "confirm_password": "new-password-1",
+        },
+    )
+    assert "Current password is incorrect." in resp.data.decode()
+    db.session.expire_all()
+    assert User.query.filter_by(username="alice").one().check_password("old-password")
+
+    resp = alice.post(
+        "/account",
+        data={
+            "current_password": "old-password",
+            "new_password": "new-password-1",
+            "confirm_password": "new-password-1",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "Password changed." in resp.data.decode()
+
+    db.session.expire_all()
+    user = User.query.filter_by(username="alice").one()
+    assert user.check_password("new-password-1")
+    assert not user.check_password("old-password")
+
+    alice.post("/logout")
+    fresh = app.test_client()
+    old_login = fresh.post(
+        "/login", data={"username": "alice", "password": "old-password"}
+    )
+    assert "Invalid username or password" in old_login.data.decode()
+    new_login = fresh.post(
+        "/login", data={"username": "alice", "password": "new-password-1"}
+    )
+    assert new_login.status_code == 302
+    assert new_login.headers["Location"] == "/"

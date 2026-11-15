@@ -8,9 +8,13 @@ from wtforms import (
     StringField,
     TextAreaField,
 )
-from wtforms.validators import DataRequired, Length, Optional
+from wtforms.validators import DataRequired, EqualTo, Length, Optional
 
 MAX_WORK_RANGE_DAYS = 90
+
+
+def _strip(value):
+    return value.strip() if isinstance(value, str) else value
 
 RECURRENCE_CHOICES = (
     ("none", "Does not repeat"),
@@ -21,9 +25,37 @@ RECURRENCE_CHOICES = (
 
 
 class LoginForm(FlaskForm):
-    username = StringField("Username", validators=(DataRequired(), Length(max=80)))
+    username = StringField(
+        "Username", filters=(_strip,),
+        validators=(DataRequired(), Length(max=80)),
+    )
     password = PasswordField("Password", validators=(DataRequired(),))
     remember = BooleanField("Keep me signed in on this device")
+
+
+class SignupForm(FlaskForm):
+    """Registration needs only a username and password."""
+
+    username = StringField(
+        "Username", filters=(_strip,),
+        validators=(DataRequired(), Length(min=3, max=80)),
+    )
+    password = PasswordField(
+        "Password", validators=(DataRequired(), Length(min=8, max=128)),
+    )
+
+
+class ChangePasswordForm(FlaskForm):
+    current_password = PasswordField(
+        "Current password", validators=(DataRequired(),),
+    )
+    new_password = PasswordField(
+        "New password", validators=(DataRequired(), Length(min=8, max=128)),
+    )
+    confirm_password = PasswordField(
+        "Confirm new password",
+        validators=(DataRequired(), EqualTo("new_password", message="Passwords must match.")),
+    )
 
 
 class ProjectForm(FlaskForm):

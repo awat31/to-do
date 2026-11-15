@@ -12,12 +12,48 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required, login_user, logout_user
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
-from .forms import LoginForm
+from .forms import ChangePasswordForm, LoginForm, SignupForm
 from .models import User, db, utcnow
 from .utils import safe_next
 
 bp = Blueprint("auth", __name__)
+
+
+def _find_user(username: str) -> User | None:
+    """Usernames are unique regardless of letter case."""
+    return User.query.filter(
+        func.lower(User.username) == username.casefold()
+    ).first()
+
+
+@bp.route("/signup", methods=("GET", "POST"))
+def signup():
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard"))
+
+    form = SignupForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        if _find_user(username) is not None:
+            form.username.errors.append("That username is already taken.")
+        else:
+            user = User(username=username)
+            user.set_password(form.password.data)
+            db.session.add(user)
+            try:
+                db.session.commit()
+            except IntegrityError:
+                # A simultaneous signup won the unique constraint.
+                db.session.rollback()
+                form.username.errors.append("That username is already taken.")
+            else:
+                login_user(user)
+                flash(f"Welcome, {user.username}.", "ok")
+                return redirect(url_for("main.dashboard"))
+    return render_template("auth/signup.html", form=form)
 
 
 @bp.route("/login", methods=("GET", "POST"))
@@ -26,7 +62,7 @@ def login():
         return redirect(url_for("main.dashboard"))
     form = LoginForm()
     if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data.strip()).first()
+        user = _find_user(form.username.data)
         if user is not None and user.is_locked():
             remaining = (user.locked_until - utcnow()).total_seconds()
             minutes = max(1, math.ceil(remaining / 60))
@@ -62,6 +98,22 @@ def login():
         )
         flash("Invalid username or password.", "error")
     return render_template("auth/login.html", form=form)
+
+
+@bp.route("/account", methods=("GET", "POST"))
+@login_required
+def account():
+    form = ChangePasswordForm()
+    if form.validate_on_submit():
+        if not current_user.check_password(form.current_password.data):
+            form.current_password.errors.append("Current password is incorrect.")
+        else:
+            current_user.set_password(form.new_password.data)
+            current_user.clear_failures()
+            db.session.commit()
+            flash("Password changed.", "ok")
+            return redirect(url_for("auth.account"))
+    return render_template("auth/account.html", form=form)
 
 
 @bp.route("/logout", methods=("POST",))
