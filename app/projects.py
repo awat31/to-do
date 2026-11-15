@@ -16,7 +16,7 @@ from .access import project_or_404, task_or_404
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
-from .queries import filter_task_tree, load_all_tasks, prepare_tasks
+from .queries import filter_task_tree, prepare_tasks
 from .utils import csrf_valid, flash_form_errors, notes_payload
 
 bp = Blueprint("projects", __name__, url_prefix="/projects")
@@ -71,7 +71,7 @@ def create():
 @login_required
 def detail(project_id: int):
     project = project_or_404(project_id)
-    prepare_tasks(load_all_tasks(current_user.id))
+    prepare_tasks(user_id=current_user.id)
     roots = project.root_tasks.all()
     if session.get("hide_completed", False):
         roots = filter_task_tree(roots, hide_done=True)

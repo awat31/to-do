@@ -250,56 +250,6 @@
     true
   );
 
-  // Drag-and-drop sibling reordering on task trees.
-  const dragRows = document.querySelectorAll(".js-drag-row");
-  if (dragRows.length) {
-    let dragged = null;
-
-    const clearDrop = () => {
-      document.querySelectorAll(".drop-target").forEach((row) =>
-        row.classList.remove("drop-target")
-      );
-    };
-
-    dragRows.forEach((row) => {
-      row.addEventListener("dragstart", (e) => {
-        dragged = row;
-        row.classList.add("dragging");
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", row.dataset.taskId);
-      });
-      row.addEventListener("dragend", () => {
-        row.classList.remove("dragging");
-        clearDrop();
-        dragged = null;
-      });
-      row.addEventListener("dragover", (e) => {
-        if (!dragged || dragged === row) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        clearDrop();
-        row.classList.add("drop-target");
-      });
-      row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
-      row.addEventListener("drop", (e) => {
-        e.preventDefault();
-        if (!dragged || dragged === row) return;
-        const rect = row.getBoundingClientRect();
-        const position = e.clientY > rect.top + rect.height / 2 ? "after" : "before";
-        const url = "/tasks/" + encodeURIComponent(dragged.dataset.taskId) + "/reorder";
-        window
-          .postJSON(url, { target_id: Number(row.dataset.taskId), position: position })
-          .then((data) => {
-            if (data && data.ok) window.location.reload();
-          })
-          .catch(() => {
-            clearDrop();
-            window.alert("That move could not be completed.");
-          });
-      });
-    });
-  }
-
   // "Jump to…" popup on the calendar toolbar.
   const jumpBtn = document.getElementById("jump-toggle");
   const jumpPop = document.getElementById("jump-pop");

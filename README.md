@@ -20,9 +20,9 @@ constraints.
   and year views have list and calendar layouts; year view links its twelve
   mini-calendars to their months. Month and week calendar days link to the day
   view.
-- **Task list tools** — filter by title, project, and status; drag siblings to
-  reorder them; and show or hide completed tasks. Task details include controls
-  to complete, move, or reschedule a whole subtree.
+- **Task list tools** — filter by title, project, and status; order tasks by due
+  date; and show or hide completed tasks. Task details include controls to
+  complete, move, or reschedule a whole subtree.
 - **Trash and undo** — deleting a task snapshots its subtree. Restore from the
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
