@@ -67,6 +67,9 @@ def login():
 @bp.route("/logout", methods=("POST",))
 @login_required
 def logout():
-    logout_user()
+    # Clear app state first. Flask-Login queues deletion of the remember-me
+    # cookie via a marker in the session, so clearing afterwards would drop
+    # that marker and the next request would silently log the user back in.
     session.clear()
+    logout_user()
     return redirect(url_for("auth.login"))

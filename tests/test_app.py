@@ -102,6 +102,28 @@ def test_login_accepts_correct_password(client):
     assert resp.status_code == 200
 
 
+def test_logout_clears_remember_cookie(client):
+    """Logging out must not let the remember-me cookie sign the user back in."""
+    resp = client.post(
+        "/login",
+        data={"username": "admin", "password": "test-password", "remember": "y"},
+    )
+    assert resp.status_code == 302
+    assert client.get_cookie("remember_token") is not None
+
+    resp = client.post("/logout")
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/login"
+    assert client.get_cookie("remember_token") is None
+
+    # The login page itself must not bounce an authenticated-looking user
+    # straight back to the dashboard.
+    login = client.get("/login")
+    assert login.status_code == 200
+    assert "Log in" in login.data.decode()
+    assert client.get("/").status_code == 302
+
+
 # --- calendar period logic ---------------------------------------------
 
 def test_period_day():
