@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline · To-Do</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #faf6ec; color: #2c2a26;
+      font: 16px/1.5 "Segoe UI", system-ui, sans-serif; padding: 2rem;
+    }
+    main {
+      max-width: 26rem; background: #fff; border: 1px solid #ece5d4;
+      border-radius: 14px; padding: 1.5rem; box-shadow: 0 2px 12px rgb(60 50 20 / 0.08);
+    }
+    h1 { margin: 0 0 0.5rem; font-size: 1.35rem; }
+    p { margin: 0 0 1rem; color: #6f6a60; }
+    a { color: #c2410c; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>You’re offline</h1>
+    <p>The To-Do server can’t be reached right now. Your saved tasks are safe;
+       reconnect and refresh to continue.</p>
+    <a href="/">Try again</a>
+  </main>
+</body>
+</html>

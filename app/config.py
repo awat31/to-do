@@ -3,6 +3,13 @@ import datetime as dt
 import os
 from typing import ClassVar
 
+from dotenv import find_dotenv, load_dotenv
+
+# Config values below are class attributes evaluated at import time, so the
+# .env file has to be loaded first (the app factory loads it too, which is
+# harmless but too late for these defaults).
+load_dotenv(find_dotenv(usecwd=True), override=False)
+
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, "")

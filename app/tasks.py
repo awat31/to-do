@@ -14,9 +14,7 @@ from flask import (
     url_for,
 )
 from flask_login import login_required
-from flask_wtf.csrf import validate_csrf
 from sqlalchemy.orm import joinedload
-from werkzeug.exceptions import BadRequest
 
 from . import periods
 from .forms import (
@@ -33,7 +31,13 @@ from .queries import (
     prepare_tasks,
     work_rows,
 )
-from .utils import flash_form_errors, redirect_back, shift_month
+from .utils import (
+    csrf_valid,
+    flash_form_errors,
+    notes_payload,
+    redirect_back,
+    shift_month,
+)
 
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
 
@@ -130,7 +134,9 @@ def index():
     status = request.args.get("status", "all")
     if status not in ("all", "open", "done"):
         status = "all"
-    hide = session.get("hide_completed", False)
+    # "Done" is an explicit request: don't let the hide-completed preference
+    # silently turn the result into an empty page.
+    hide = session.get("hide_completed", False) and status != "done"
 
     all_tasks = prepare_tasks(load_all_tasks())
 
@@ -246,17 +252,12 @@ def toggle(task_id: int):
 def notes(task_id: int):
     """Autosave endpoint for the task notes editor."""
     task = Task.query.get_or_404(task_id)
-    body = request.get_json(silent=True)
-    token = request.headers.get("X-CSRFToken", "")
-    if isinstance(body, dict):
-        token = token or body.get("csrf_token", "")
-    try:
-        validate_csrf(token)
-    except BadRequest:
+    data, token = notes_payload()
+    if not csrf_valid(token):
         return {"ok": False, "error": "bad csrf"}, 400
-    if not isinstance(body, dict) or not isinstance(body.get("notes"), str):
+    if not isinstance(data.get("notes"), str):
         return {"ok": False, "error": "notes must be a string"}, 400
-    task.notes = body["notes"][:current_app.config["TASK_NOTES_LIMIT"]]
+    task.notes = data["notes"][:current_app.config["TASK_NOTES_LIMIT"]]
     db.session.commit()
     return {"ok": True, "saved_at": utcnow().isoformat(timespec="seconds") + "Z"}
 
@@ -488,6 +489,9 @@ def complete_subtree(task_id: int):
     tasks = task.descendant_objects()
     for item in tasks:
         item.done = True
+    # Keep recurring tasks consistent with the single-task toggle.
+    for item in tasks:
+        _spawn_recurrence(item)
     db.session.commit()
     flash(f"Marked {len(tasks)} task(s) done.", "ok")
     return redirect(url_for("tasks.detail", task_id=task.id))

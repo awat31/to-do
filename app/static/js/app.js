@@ -57,10 +57,14 @@
     const payloadFor = (value) => ({ notes: value, csrf_token: csrfToken() });
 
     const send = (value, { unload = false } = {}) => {
-      const body = JSON.stringify(payloadFor(value));
-      if (unload && navigator.sendBeacon && body.length < 60000) {
-        const blob = new Blob([body], { type: "application/json" });
-        if (navigator.sendBeacon(urlFactory(), blob)) return Promise.resolve();
+      // sendBeacon cannot set the X-CSRFToken header, so the beacon uses a
+      // FormData body with the token as a field (the notes endpoints accept
+      // both JSON and form bodies). Larger saves fall back to keepalive fetch.
+      if (unload && navigator.sendBeacon && value.length < 60000) {
+        const form = new FormData();
+        form.append("notes", value);
+        form.append("csrf_token", csrfToken());
+        if (navigator.sendBeacon(urlFactory(), form)) return Promise.resolve();
       }
       return window.postJSON(urlFactory(), payloadFor(value), { keepalive: unload });
     };
@@ -328,6 +332,16 @@
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") setOpen(false);
+    });
+  }
+
+  // Installable PWA: register the service worker only where the browser
+  // supports it (it also requires HTTPS or localhost).
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        /* offline support is a progressive enhancement */
+      });
     });
   }
 })();

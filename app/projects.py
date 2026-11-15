@@ -10,15 +10,13 @@ from flask import (
     url_for,
 )
 from flask_login import login_required
-from flask_wtf.csrf import validate_csrf
 from sqlalchemy import func
-from werkzeug.exceptions import BadRequest
 
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
 from .queries import filter_task_tree, prepare_tasks
-from .utils import flash_form_errors
+from .utils import csrf_valid, flash_form_errors, notes_payload
 
 bp = Blueprint("projects", __name__, url_prefix="/projects")
 
@@ -103,21 +101,12 @@ def delete(project_id: int):
 def notes(project_id: int):
     """Autosave endpoint for the project notebook."""
     project = Project.query.get_or_404(project_id)
-    try:
-        validate_csrf(request.headers.get("X-CSRFToken", ""))
-    except BadRequest:
+    data, token = notes_payload()
+    if not csrf_valid(token):
         return {"ok": False, "error": "bad csrf"}, 400
-    body = request.get_json(silent=True)
-    token = request.headers.get("X-CSRFToken", "")
-    if isinstance(body, dict):
-        token = token or body.get("csrf_token", "")
-    try:
-        validate_csrf(token)
-    except BadRequest:
-        return {"ok": False, "error": "bad csrf"}, 400
-    if not isinstance(body, dict) or not isinstance(body.get("notes"), str):
+    if not isinstance(data.get("notes"), str):
         return {"ok": False, "error": "notes must be a string"}, 400
-    project.notes = body["notes"][:current_app.config["PROJECT_NOTES_LIMIT"]]
+    project.notes = data["notes"][:current_app.config["PROJECT_NOTES_LIMIT"]]
     db.session.commit()
     return {"ok": True}
 

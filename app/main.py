@@ -46,7 +46,6 @@ def dashboard():
 
     queries.prepare_tasks()
 
-    open_tasks = Task.query.filter_by(done=False).count()
     overdue = Task.query.filter(
         Task.done == False,
         Task.due_date != None,
@@ -67,7 +66,6 @@ def dashboard():
         month_due=month_due,
         week_end=week_end,
         month_end=month_end,
-        open_tasks=open_tasks,
         overdue=overdue,
         unscheduled=unscheduled,
     )

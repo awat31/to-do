@@ -64,6 +64,33 @@
   <p class="empty big">Nothing selected — turn on "Due" and/or "Working on" above to see tasks here.</p>
 {% endif %}
 
+{% if month_grid and (due_sel or work_sel) %}
+  <section class="month-grid-wrap" aria-label="Month at a glance">
+    <div class="month-grid">
+      {% for wd in month_grid.weekdays %}
+        <div class="month-weekday" aria-hidden="true">{{ wd }}</div>
+      {% endfor %}
+      {% for cell in month_grid.cells %}
+        <a class="month-cell{{ ' is-outside' if not cell.in_month }}{{ ' is-today' if cell.is_today }}"
+           href="{{ url_for('calendarview.view', kind='day', value=cell.date.isoformat(), due=(1 if due_sel else 0), work=(1 if work_sel else 0)) }}"
+           aria-label="{{ cell.date | human_date }}{% if cell.due %}, {{ cell.due | length }} due{% endif %}{% if cell.work %}, {{ cell.work | length }} working on{% endif %}">
+          <span class="month-day">{{ cell.date.day }}</span>
+          <span class="month-marks">
+            {% if cell.due %}<span class="month-pill month-due">{{ cell.due | length }} due</span>{% endif %}
+            {% if cell.work %}<span class="month-pill month-work">{{ cell.work | length }} work</span>{% endif %}
+          </span>
+          {% for task in cell.tasks[:3] %}
+            <span class="month-task">{{ task.title }}</span>
+          {% endfor %}
+          {% if cell.tasks | length > 3 %}
+            <span class="month-more">+{{ cell.tasks | length - 3 }} more</span>
+          {% endif %}
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
 {% if kind == 'day' %}
   {% if due_sel %}
   <section class="section">

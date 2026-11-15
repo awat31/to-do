@@ -853,6 +853,45 @@ def test_task_index_query_count_stays_bounded(logged_in):
     assert len(statements) <= 15, f"{len(statements)} SELECTs: {statements}"
 
 
+def test_done_filter_overrides_hide_completed(logged_in):
+    task = _create_task(logged_in, title="Explicitly done")
+    task.done = True
+    db.session.commit()
+    logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/tasks/"})
+
+    page = logged_in.get("/tasks/?status=done").data.decode()
+    assert "Explicitly done" in page
+
+    # The preference still applies to the unfiltered list.
+    all_page = logged_in.get("/tasks/").data.decode()
+    assert "Explicitly done" not in all_page
+
+
+def test_bulk_complete_spawns_recurring_tasks(logged_in):
+    import datetime as dt
+
+    from app.models import Task
+
+    parent = _create_task(logged_in, title="Bulk repeat", due="2026-06-01")
+    logged_in.post(
+        f"/tasks/{parent.id}/edit",
+        data={
+            "title": parent.title,
+            "notes": "",
+            "due_date": "2026-06-01",
+            "recurrence": "weekly",
+            "project_id": 0,
+            "parent_id": 0,
+        },
+    )
+    db.session.expire_all()
+    parent = db.session.get(Task, parent.id)
+
+    logged_in.post(f"/tasks/{parent.id}/complete-subtree")
+    clone = Task.query.filter_by(recurrence_source_id=parent.id).one()
+    assert clone.due_date == dt.date(2026, 6, 8)
+
+
 def test_project_move_promotes_picked_subtask(logged_in):
     from app.models import Project, Task
 
@@ -873,6 +912,71 @@ def test_project_move_promotes_picked_subtask(logged_in):
     assert moved.project_id == project.id
     assert moved.parent_id is None  # promoted to a project root
     assert db.session.get(Task, grandchild_id).project_id == project.id
+
+
+def test_notes_accepts_form_beacon_payload(csrf_client):
+    """The page-hide beacon sends FormData because it cannot set a header."""
+    from app.models import Task
+
+    token = _csrf(csrf_client)
+    csrf_client.post(
+        "/tasks/new",
+        data={
+            "title": "Beacon task",
+            "notes": "",
+            "due_date": "",
+            "project_id": 0,
+            "parent_id": 0,
+            "csrf_token": token,
+        },
+    )
+    task = Task.query.filter_by(title="Beacon task").one()
+    resp = csrf_client.post(
+        f"/tasks/{task.id}/notes",
+        data={"notes": "last edit", "csrf_token": token},
+    )
+    assert resp.status_code == 200
+    db.session.expire_all()
+    assert db.session.get(Task, task.id).notes == "last edit"
+
+
+def test_notes_rejects_bad_csrf_without_global_guard(app, logged_in):
+    """A bad token must be a 400 even if CSRFProtect is not intercepting."""
+    app.config["WTF_CSRF_ENABLED"] = False
+    task = _create_task(logged_in, title="Bad token task")
+    resp = logged_in.post(
+        f"/tasks/{task.id}/notes",
+        json={"notes": "nope", "csrf_token": "not-a-token"},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "bad csrf"
+
+
+def test_month_view_renders_overview_grid(logged_in):
+    _create_task(logged_in, title="Grid task", due="2026-03-03")
+    page = logged_in.get("/calendar/month/2026-03?due=1&work=0").data.decode()
+    assert 'class="month-grid"' in page
+    assert "Grid task" in page
+    assert "/calendar/day/2026-03-03?due=1&amp;work=0" in page
+    assert "month-cell" in page
+    # the grid does not leak into non-month views
+    day = logged_in.get("/calendar/day/2026-03-03?due=1&work=0").data.decode()
+    assert 'class="month-grid"' not in day
+
+
+def test_pwa_manifest_and_service_worker(client):
+    import json
+
+    worker = client.get("/sw.js")
+    assert worker.status_code == 200
+    assert "javascript" in worker.headers["Content-Type"]
+    assert worker.headers["Service-Worker-Allowed"] == "/"
+    assert "todo-shell" in worker.data.decode()
+
+    manifest = client.get("/static/manifest.webmanifest")
+    assert manifest.status_code == 200
+    assert json.loads(manifest.data)["display"] == "standalone"
+    assert 'rel="manifest"' in client.get("/login").data.decode()
 
 
 def test_timezone_setting_drives_today(app):

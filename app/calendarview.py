@@ -18,12 +18,10 @@ from flask import (
     url_for,
 )
 from flask_login import login_required
-from flask_wtf.csrf import validate_csrf
-from werkzeug.exceptions import BadRequest
 
 from . import periods, queries
 from .models import Task, TaskDate, db
-from .utils import redirect_back
+from .utils import csrf_valid, redirect_back
 
 bp = Blueprint("calendarview", __name__, url_prefix="/calendar")
 
@@ -105,6 +103,7 @@ def view(kind: str, value: str | None):
         work_break = _strip_done(work_break)
     due_count = sum(len(tasks) for _, days in due_break for _, tasks in days)
     work_count = sum(len(tasks) for _, days in work_break for _, tasks in days)
+    month_grid = _month_grid(p, due_break, work_break) if kind == "month" else None
     queries.prepare_tasks()
 
     return render_template(
@@ -112,7 +111,41 @@ def view(kind: str, value: str | None):
         p=p, kind=kind, due_sel=due_sel, work_sel=work_sel,
         due_break=due_break, work_break=work_break,
         due_count=due_count, work_count=work_count,
+        month_grid=month_grid,
     )
+
+
+def _month_grid(p, due_break, work_break) -> dict:
+    """Compact Monday-first month grid used above the detailed list."""
+    due_map = {d: tasks for _, days in due_break for d, tasks in days}
+    work_map = {d: tasks for _, days in work_break for d, tasks in days}
+    first, last = p["start"], p["end"]
+    grid_start = first - dt.timedelta(days=first.weekday())
+    grid_end = last + dt.timedelta(days=6 - last.weekday())
+    today = periods.today()
+    cells = []
+    day = grid_start
+    while day <= grid_end:
+        tasks, seen = [], set()
+        for task in [*due_map.get(day, []), *work_map.get(day, [])]:
+            if task.id not in seen:
+                seen.add(task.id)
+                tasks.append(task)
+        cells.append(
+            {
+                "date": day,
+                "in_month": first <= day <= last,
+                "is_today": day == today,
+                "due": due_map.get(day, []),
+                "work": work_map.get(day, []),
+                "tasks": tasks,
+            }
+        )
+        day += dt.timedelta(days=1)
+    return {
+        "cells": cells,
+        "weekdays": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+    }
 
 
 @bp.route("/jump", methods=("GET",))
@@ -155,9 +188,7 @@ def quick_add_date(task_id: int):
     instead of erroring out.
     """
     task = Task.query.get_or_404(task_id)
-    try:
-        validate_csrf(request.form.get("csrf_token", ""))
-    except BadRequest:
+    if not csrf_valid(request.form.get("csrf_token", "")):
         abort(400)
     raw = (request.form.get("date") or "").strip()
     if raw:

@@ -4,10 +4,11 @@ import secrets
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
-from flask import Flask, render_template
+from flask import Flask, render_template, send_from_directory
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
+from sqlalchemy.exc import IntegrityError
 
 from . import periods
 from .config import get_config_class
@@ -64,15 +65,20 @@ def _ensure_admin(app: Flask) -> None:
 
         if user is not None and password:
             if not user.check_password(password):
-                    user.set_password(password)
-                    user.clear_failures()
-                    db.session.commit()
-                    app.logger.info("Admin password updated from TODO_ADMIN_PASSWORD")
-                    if len(password) < 10:
-                        app.logger.warning(
-                            "TODO_ADMIN_PASSWORD is shorter than 10 characters; "
-                            "use a longer passphrase."
-                        )
+                user.set_password(password)
+                user.clear_failures()
+                db.session.commit()
+                app.logger.info("Admin password updated from TODO_ADMIN_PASSWORD")
+                if len(password) < 10:
+                    app.logger.warning(
+                        "TODO_ADMIN_PASSWORD is shorter than 10 characters; "
+                        "use a longer passphrase."
+                    )
+            elif user.is_locked():
+                # The configured password is authoritative: an operator who
+                # restarts the service should not stay locked out.
+                user.clear_failures()
+                db.session.commit()
             return
 
         generated = False
@@ -82,7 +88,13 @@ def _ensure_admin(app: Flask) -> None:
         user = User(username="admin")
         user.set_password(password)
         db.session.add(user)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Several gunicorn workers can reach first-run together.
+            db.session.rollback()
+            app.logger.info("Admin user was created by another worker")
+            return
         if generated:
             path = Path(app.instance_path) / "admin_password.txt"
             path.write_text(
@@ -112,6 +124,7 @@ def create_app(config_class=None) -> Flask:
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     _instance_secret_key(app)
+    app.config["ASSET_VERSION"] = _asset_version(app)
 
     app.config.setdefault(
         "SQLALCHEMY_DATABASE_URI",
@@ -132,7 +145,10 @@ def create_app(config_class=None) -> Flask:
 
     @login_manager.user_loader
     def load_user(user_id):
-        return db.session.get(User, int(user_id))
+        try:
+            return db.session.get(User, int(user_id))
+        except (TypeError, ValueError):
+            return None
 
     # --- template helpers --------------------------------------------------
     @app.template_filter("human_date")
@@ -174,7 +190,7 @@ def create_app(config_class=None) -> Flask:
             "kinds": periods.KINDS,
             "months": periods.MONTH_NAMES,
             "hide_completed": session.get("hide_completed", False),
-            "asset_version": _asset_version(app),
+            "asset_version": _asset_version(app) if app.debug else app.config["ASSET_VERSION"],
         }
 
     @app.after_request
@@ -190,7 +206,8 @@ def create_app(config_class=None) -> Flask:
             "Content-Security-Policy",
             "default-src 'self'; img-src 'self' data:; "
             "style-src 'self' 'unsafe-inline'; script-src 'self'; "
-            "connect-src 'self'; form-action 'self'; base-uri 'self'; "
+            "connect-src 'self'; worker-src 'self'; manifest-src 'self'; "
+            "form-action 'self'; base-uri 'self'; "
             "frame-ancestors 'none'; object-src 'none'",
         )
         if response.mimetype == "text/html":
@@ -224,6 +241,16 @@ def create_app(config_class=None) -> Flask:
     @app.route("/healthz")
     def healthz():
         return {"status": "ok"}
+
+    @app.route("/sw.js")
+    def service_worker():
+        """Serve the worker from the root so it can control the whole app."""
+        response = send_from_directory(
+            app.static_folder, "sw.js", mimetype="application/javascript"
+        )
+        response.headers["Service-Worker-Allowed"] = "/"
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
     with app.app_context():
         from sqlalchemy import inspect
