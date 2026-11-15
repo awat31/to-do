@@ -197,9 +197,9 @@ def build_forest(
         kids = [k for k in t._children_cache if k.id in keep_ids]
         visible_children[t.id] = kids
 
-    def prune(task: Task) -> list[Task]:
+    def prune(task: Task) -> tuple[Task, list[Task]] | None:
         kids = [prune(k) for k in visible_children.get(task.id, [])]
-        kids = [entry[0] for entry in kids if entry[0] is not None]
+        kids = [entry[0] for entry in kids if entry is not None]
         if hide_done and task.done and not kids:
             return None
         task._filtered_children = kids

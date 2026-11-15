@@ -396,6 +396,21 @@ def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
     assert [t.title for t in filtered] == ["Done container"]
 
 
+def test_hide_completed_done_leaf_child_does_not_crash(logged_in):
+    """Pruning a completed leaf must not break its open parent's tree."""
+    parent = _create_task(logged_in, title="Open parent")
+    child = _create_task(logged_in, title="Done leaf", parent=parent.id)
+    child.done = True
+    db.session.commit()
+
+    logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/"})
+    resp = logged_in.get("/tasks/")
+    assert resp.status_code == 200
+    page = resp.data.decode()
+    assert "Open parent" in page
+    assert "Done leaf" not in page
+
+
 def test_task_search(logged_in):
     """JSON typeahead: empty query = all tasks, otherwise filtered by title."""
     _create_task(logged_in, title="Alpha build")
