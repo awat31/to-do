@@ -9,7 +9,7 @@
 {% endmacro %}
 
 {% macro task_card(task, next_url=None, show_dates=true, default_date=None) %}
-<div class="task-card {{ 'is-done' if task.done }}" data-task-id="{{ task.id }}">
+<div class="task-card {{ 'is-done' if task.done }}">
   <form method="post" action="{{ url_for('tasks.toggle', task_id=task.id) }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
@@ -58,8 +58,7 @@
 <ul class="task-tree">
   {% for task in tasks recursive %}
   <li>
-    <div class="tree-row js-drag-row" draggable="true" data-task-id="{{ task.id }}">
-      <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
+    <div class="tree-row">
       {{ task_card(task, next_url=next_url) }}
     </div>
     {% set kids = task._filtered_children if task._filtered_children is defined else (task._children_cache if task._children_cache is defined else task.children) %}

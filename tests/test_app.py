@@ -199,6 +199,27 @@ def test_date_range_expands_into_daily_work_dates(logged_in):
     assert dates == ["2026-03-10", "2026-03-11", "2026-03-12"]
 
 
+def test_work_date_range_uses_configured_limit(app, logged_in):
+    task = _create_task(logged_in, title="Limited range")
+    app.config["MAX_WORK_RANGE_DAYS"] = 2
+
+    accepted = logged_in.post(
+        f"/tasks/{task.id}/work-dates",
+        data={"start": "2026-03-10", "end": "2026-03-11"},
+        follow_redirects=True,
+    )
+    assert accepted.status_code == 200
+    assert "Added 2 work dates." in accepted.data.decode()
+
+    rejected = logged_in.post(
+        f"/tasks/{task.id}/work-dates",
+        data={"start": "2026-03-10", "end": "2026-03-12"},
+        follow_redirects=True,
+    )
+    assert rejected.status_code == 200
+    assert "Ranges are limited to 2 days." in rejected.data.decode()
+
+
 def test_subtask_progress_and_cascade_delete(logged_in):
     from app.models import Task
 
@@ -806,33 +827,40 @@ def test_empty_trash(logged_in):
     assert Task.query.filter_by(title="Throwaway").first() is None
 
 
-def test_drag_reorder_moves_sibling(logged_in):
-    from app.models import Task
+def test_task_index_sorts_all_tree_levels_by_due_date(logged_in):
+    _create_task(logged_in, title="Due later", due="2026-03-20")
+    _create_task(logged_in, title="Due earlier", due="2026-03-01")
+    _create_task(logged_in, title="No due date")
+    parent = _create_task(logged_in, title="Unscheduled parent")
+    _create_task(logged_in, title="Child due later", due="2026-03-10", parent=parent.id)
+    _create_task(logged_in, title="Child due earlier", due="2026-03-05", parent=parent.id)
 
-    first = _create_task(logged_in, title="First")
-    _create_task(logged_in, title="Second")
-    third = _create_task(logged_in, title="Third")
+    page = logged_in.get("/tasks/?sort=due").data.decode()
+    assert page.index("Due earlier") < page.index("Due later")
+    assert page.index("Due later") < page.index("No due date")
+    assert page.index("Child due earlier") < page.index("Child due later")
+    assert 'name="sort"' in page
+    assert '<option value="due" selected>' in page
 
-    resp = logged_in.post(
-        f"/tasks/{third.id}/reorder",
-        json={"target_id": first.id, "position": "after"},
-    )
-    assert resp.status_code == 200 and resp.get_json()["ok"] is True
-    db.session.expire_all()
-    order = [
-        t.title
-        for t in Task.query.filter_by(parent_id=None).order_by(
-            Task.position, Task.id
-        )
-    ]
-    assert order == ["First", "Third", "Second"]
+    filtered = logged_in.get(
+        "/tasks/?q=Due%20later&status=open&sort=due"
+    ).data.decode()
+    assert "Due later" in filtered and "Due earlier" not in filtered
+    assert "No due date" not in filtered
+    assert 'name="q" value="Due later"' in filtered
+    assert '<option value="open" selected>' in filtered
+    assert '<option value="due" selected>' in filtered
 
-    child = _create_task(logged_in, title="First child", parent=first.id)
-    resp = logged_in.post(
-        f"/tasks/{first.id}/reorder",
-        json={"target_id": child.id, "position": "before"},
-    )
-    assert resp.status_code == 400
+
+def test_task_index_keeps_default_order_when_due_sort_is_not_selected(logged_in):
+    task = _create_task(logged_in, title="Later task", due="2026-03-20")
+    _create_task(logged_in, title="Earlier task", due="2026-03-01")
+
+    page = logged_in.get("/tasks/").data.decode()
+    assert page.index("Earlier task") < page.index("Later task")
+    assert '<option value="default" selected>' in page
+    assert "drag-handle" not in page and 'draggable="true"' not in page
+    assert logged_in.post(f"/tasks/{task.id}/reorder").status_code == 404
 
 
 def test_bulk_subtree_actions(logged_in):
@@ -1410,18 +1438,6 @@ def test_cross_user_records_return_404(app, logged_in):
     assert db.session.get(Task, admin_task.id) is not None
     assert db.session.get(Task, admin_task.id).done is False
     assert db.session.get(Project, admin_project.id) is not None
-
-
-def test_cross_user_reorder_target_is_rejected(app, logged_in):
-    admin_task = _create_task(logged_in, title="Admin reorder target")
-    alice = _signup(app)
-    alice_task = _create_task(alice, title="Alice reorder source")
-
-    resp = alice.post(
-        f"/tasks/{alice_task.id}/reorder",
-        json={"target_id": admin_task.id},
-    )
-    assert resp.status_code == 404
 
 
 def test_cannot_attach_task_to_another_users_project_or_parent(app, logged_in):

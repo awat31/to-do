@@ -197,10 +197,11 @@ def build_forest(
     predicate=None,
     sort_key=None,
 ) -> list[Task]:
-    """Turn prepared tasks into display roots, optionally filtered.
+    """Turn prepared tasks into display roots, optionally filtered or sorted.
 
     ``predicate`` selects matching tasks; their ancestors and descendants are
-    kept so the tree structure and context remain visible.
+    kept so the tree structure and context remain visible. A supplied
+    ``sort_key`` orders roots and each task's siblings.
     """
     by_id = {t.id: t for t in all_tasks}
     keep_ids = set(by_id)
@@ -232,6 +233,8 @@ def build_forest(
     def prune(task: Task) -> tuple[Task, list[Task]] | None:
         kids = [prune(k) for k in visible_children.get(task.id, [])]
         kids = [entry[0] for entry in kids if entry is not None]
+        if sort_key is not None:
+            kids.sort(key=sort_key)
         if hide_done and task.done and not kids:
             return None
         task._filtered_children = kids

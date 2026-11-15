@@ -1,4 +1,5 @@
 """WTForms used across the app."""
+from flask import current_app
 from flask_wtf import FlaskForm
 from wtforms import (
     BooleanField,
@@ -9,8 +10,6 @@ from wtforms import (
     TextAreaField,
 )
 from wtforms.validators import DataRequired, EqualTo, Length, Optional, Regexp
-
-MAX_WORK_RANGE_DAYS = 90
 
 
 def _strip(value):
@@ -121,8 +120,9 @@ class WorkDateForm(FlaskForm):
             return False
         if self.end.data is not None:
             span = (self.end.data - self.start.data).days + 1
-            if span > MAX_WORK_RANGE_DAYS:
-                self.end.errors.append(f"Ranges are limited to {MAX_WORK_RANGE_DAYS} days.")
+            max_days = current_app.config["MAX_WORK_RANGE_DAYS"]
+            if span > max_days:
+                self.end.errors.append(f"Ranges are limited to {max_days} days.")
                 return False
         return True
 

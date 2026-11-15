@@ -106,6 +106,16 @@ def _recurrence_date(d: dt.date, recurrence: str) -> dt.date | None:
     return None
 
 
+def _due_date_sort_key(task: Task) -> tuple:
+    return (
+        task.due_date is None,
+        task.due_date or dt.date.max,
+        task.done,
+        task.position,
+        task.id,
+    )
+
+
 def _spawn_recurrence(task: Task) -> Task | None:
     """Create the next occurrence when a repeating task is completed."""
     if task.recurrence == "none" or task.due_date is None:
@@ -141,18 +151,19 @@ def _spawn_recurrence(task: Task) -> Task | None:
 @login_required
 def index():
     """All top-level tasks with their full sub-task trees, filterable."""
-    from .queries import load_all_tasks
-
     q = (request.args.get("q") or "").strip()[:200]
     project_id = request.args.get("project", type=int) or None
     status = request.args.get("status", "all")
     if status not in ("all", "open", "done"):
         status = "all"
+    sort_order = request.args.get("sort", "default")
+    if sort_order not in ("default", "due"):
+        sort_order = "default"
     # "Done" is an explicit request: don't let the hide-completed preference
     # silently turn the result into an empty page.
     hide = session.get("hide_completed", False) and status != "done"
 
-    all_tasks = prepare_tasks(load_all_tasks(current_user.id))
+    all_tasks = prepare_tasks(user_id=current_user.id)
 
     def matches(task: Task) -> bool:
         if q and q.casefold() not in task.title.casefold():
@@ -168,6 +179,7 @@ def index():
         all_tasks,
         hide_done=hide,
         predicate=matches if filtered else None,
+        sort_key=_due_date_sort_key if sort_order == "due" else None,
     )
     return render_template(
         "tasks/index.html",
@@ -179,6 +191,7 @@ def index():
         q=q,
         project_filter=project_id,
         status=status,
+        sort_order=sort_order,
         filtered=filtered,
     )
 
@@ -220,9 +233,7 @@ def create():
 @login_required
 def detail(task_id: int):
     task = task_or_404(task_id)
-    from .queries import load_all_tasks
-
-    prepare_tasks(load_all_tasks(current_user.id))
+    prepare_tasks(user_id=current_user.id)
     return render_template(
         "tasks/detail.html",
         task=task,
@@ -573,50 +584,6 @@ def reschedule_subtree(task_id: int):
     db.session.commit()
     flash(f"Updated the due date for {len(tasks)} task(s).", "ok")
     return redirect(url_for("tasks.detail", task_id=task.id))
-
-
-@bp.route("/<int:task_id>/reorder", methods=("POST",))
-@login_required
-def reorder(task_id: int):
-    """Move a task before/after a sibling (drag-and-drop target)."""
-    task = task_or_404(task_id)
-    data = request.get_json(silent=True) or {}
-    target_id = data.get("target_id")
-    try:
-        target_id = int(target_id)
-    except (TypeError, ValueError):
-        return {"ok": False, "error": "target_id required"}, 400
-    target = task_or_404(target_id)
-    if target.id == task.id or target.id in task.descendant_ids():
-        return {"ok": False, "error": "cannot move a task into itself"}, 400
-
-    new_parent = target.parent_id
-    task.parent_id = new_parent
-    project_id = target.project_id
-    for item in task.descendant_objects():
-        item.project_id = project_id
-
-    if new_parent is None:
-        siblings = Task.query.filter(
-            Task.user_id == current_user.id,
-            Task.parent_id.is_(None),
-            Task.id != task.id,
-        )
-    else:
-        siblings = Task.query.filter(
-            Task.user_id == current_user.id,
-            Task.parent_id == new_parent,
-            Task.id != task.id,
-        )
-    siblings = siblings.order_by(Task.position, Task.id).all()
-    index = next((i for i, item in enumerate(siblings) if item.id == target.id), len(siblings))
-    if data.get("position") == "after":
-        index += 1
-    siblings.insert(index, task)
-    for position, item in enumerate(siblings, start=1):
-        item.position = position
-    db.session.commit()
-    return {"ok": True}
 
 
 @bp.route("/search")

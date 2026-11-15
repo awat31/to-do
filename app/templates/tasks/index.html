@@ -24,6 +24,10 @@
     <option value="open" {{ 'selected' if status == 'open' }}>Open</option>
     <option value="done" {{ 'selected' if status == 'done' }}>Done</option>
   </select>
+  <select name="sort" class="input" aria-label="Order tasks">
+    <option value="default" {{ 'selected' if sort_order == 'default' }}>Default order</option>
+    <option value="due" {{ 'selected' if sort_order == 'due' }}>Due date (earliest first)</option>
+  </select>
   <button class="btn btn-soft" type="submit">Filter</button>
   {% if filtered %}<a class="btn btn-ghost" href="{{ url_for('tasks.index') }}">Clear</a>{% endif %}
 </form>
