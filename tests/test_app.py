@@ -548,6 +548,30 @@ def test_session_cookie_not_secure_over_http(client):
     assert "Invalid" not in resp.data.decode()
 
 
+def test_gunicorn_optional_tls_certificate_pair(monkeypatch, tmp_path):
+    from pathlib import Path
+    from runpy import run_path
+
+    config_path = Path(__file__).resolve().parents[1] / "gunicorn.conf.py"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TODO_SSL_CERTFILE", raising=False)
+    monkeypatch.delenv("TODO_SSL_KEYFILE", raising=False)
+
+    http_config = run_path(str(config_path))
+    assert http_config["certfile"] is None
+    assert http_config["keyfile"] is None
+
+    monkeypatch.setenv("TODO_SSL_CERTFILE", "/certs/fullchain.pem")
+    monkeypatch.setenv("TODO_SSL_KEYFILE", "/certs/private-key.pem")
+    https_config = run_path(str(config_path))
+    assert https_config["certfile"] == "/certs/fullchain.pem"
+    assert https_config["keyfile"] == "/certs/private-key.pem"
+
+    monkeypatch.delenv("TODO_SSL_KEYFILE")
+    with pytest.raises(RuntimeError, match="Set both TODO_SSL_CERTFILE"):
+        run_path(str(config_path))
+
+
 # --- security hardening -------------------------------------------------
 
 def test_safe_next_rejects_offsite_targets():
