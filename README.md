@@ -27,7 +27,8 @@ constraints.
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
 - **Accounts** — open registration, private user data, password changes, and
-  customizable display names, and self-service deletion for every account
+  customizable display names and appearance settings (highlight colour and
+  Night mode), and self-service deletion for every account
   except the built-in `admin`. Admins can view and delete users, grant or revoke
   admin privileges, and revoke their own privileges or delete their own
   account. There is no password-reset flow.
@@ -104,8 +105,11 @@ Use **Undo** immediately after a deletion, or restore a batch from Trash. When
 a task is deleted, batches older than 30 days and batches beyond the newest 20
 are pruned. Deleting a batch or emptying Trash is permanent.
 
-Select your username in the navigation to set your display name or change your
-password. Your display name defaults to your username and can be changed at
+Select your username in the navigation to set your display name, choose an
+application highlight colour, turn Night mode on or off, or change your
+password. The highlight colour defaults to the standard orange and applies in
+both light and Night mode. Night mode uses a midnight-blue background with
+light text. Your display name defaults to your username and can be changed at
 any time. To log out, use **Log out**.
 
 Administrators can select **Users** in the navigation to see registered

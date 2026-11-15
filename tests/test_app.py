@@ -1175,6 +1175,66 @@ def test_display_name_cannot_be_empty(app):
     assert db.session.get(User, user.id).display_name == "steve01"
 
 
+def test_appearance_preferences_default_to_orange_and_light_mode(logged_in):
+    from app.models import User
+
+    user = User.query.filter_by(username="admin").one()
+    assert user.highlight_color == "#f97316"
+    assert not user.night_mode
+    page = logged_in.get("/").data.decode()
+    assert '<body class=""' in page
+    assert "--accent: #f97316; --accent-text: #000000;" in page
+    assert '<meta name="color-scheme" content="light">' in page
+
+
+def test_user_can_update_highlight_colour_and_night_mode(logged_in):
+    from app.models import User
+
+    response = logged_in.post(
+        "/account/appearance",
+        data={"highlight_color": "#123ABC", "night_mode": "y"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Appearance settings updated." in response.data.decode()
+    page = logged_in.get("/").data.decode()
+    assert '<body class="night-mode"' in page
+    assert "--accent: #123abc; --accent-text: #ffffff;" in page
+    assert '<meta name="theme-color" content="#0b1220">' in page
+
+    user = User.query.filter_by(username="admin").one()
+    assert user.highlight_color == "#123abc"
+    assert user.night_mode
+
+    response = logged_in.post(
+        "/account/appearance",
+        data={"highlight_color": "#ffee00"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    page = logged_in.get("/").data.decode()
+    assert '<body class=""' in page
+    assert "--accent: #ffee00; --accent-text: #000000;" in page
+    db.session.expire_all()
+    user = db.session.get(User, user.id)
+    assert user.highlight_color == "#ffee00"
+    assert not user.night_mode
+
+
+def test_invalid_highlight_colour_does_not_change_appearance(logged_in):
+    from app.models import User
+
+    response = logged_in.post(
+        "/account/appearance",
+        data={"highlight_color": "red", "night_mode": "y"},
+    )
+    assert response.status_code == 400
+    assert "Choose a valid colour." in response.data.decode()
+    user = User.query.filter_by(username="admin").one()
+    assert user.highlight_color == "#f97316"
+    assert not user.night_mode
+
+
 def test_signup_rejects_duplicate_username_case_insensitively(app):
     from app.models import User
 
