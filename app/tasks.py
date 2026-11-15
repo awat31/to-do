@@ -17,7 +17,7 @@ from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
 
 from . import periods
-from .access import batch_or_404, project_or_404, task_or_404
+from .access import batch_or_404, task_or_404
 from .forms import (
     DeleteForm,
     DueDateForm,

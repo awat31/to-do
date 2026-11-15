@@ -2,7 +2,8 @@
 
 A Flask-based task app: recursive sub-tasks, projects with notebook pages,
 flexible work-on scheduling, recurring tasks, trash/undo, and calendar views
-by day / week / month / year.
+by day / week / month / year. Accounts have private task, project, and trash
+data, with ownership enforced by route queries and database constraints.
 
 ## Features
 
@@ -17,14 +18,18 @@ by day / week / month / year.
 - **Recurring tasks** — daily / weekly / monthly. Completing a task creates
   the next occurrence (monthly repeats clamp to month end).
 - **Calendar views** — Day / Week / Month / Year, navigable with ‹ / › and a
-  "Today" button. Month view includes a compact at-a-glance grid. Tasks can be
-  viewed **by due date** or **by planned work date**, independently, and the
-  selection survives navigation and the jump-to popup.
+  "Today" button. Week, month, and year views offer calendar and list layouts;
+  year view links twelve mini-calendars to their months. Tasks can be viewed
+  **by due date** or **by planned work date**, independently, with selection
+  preserved across navigation and the jump-to popup.
 - **Task list tools** — filters (text / project / status), drag-and-drop
   sibling reordering, bulk complete / move / reschedule for a subtree, and an
   optional hide-completed switch.
 - **Trash & undo** — deleting a subtree snapshots it; restore from Trash or
   the undo bar. Batches auto-expire after 30 days (newest 20 kept).
+- **Multi-user accounts** — users can sign up and keep separate tasks,
+  projects, schedules, and trash. Usernames are case-insensitive. Registration
+  is open; there are no admin roles or password-reset flow.
 - **Autosave** — task and project notes save as you type, with retry,
   keepalive, and a form-encoded `sendBeacon` payload for the last edit.
 - **PWA / mobile shell** — installable manifest, service-worker static cache,
@@ -36,7 +41,7 @@ by day / week / month / year.
 ## Stack
 
 Python 3.14 · Flask 3 (app factory + blueprints) · Flask-SQLAlchemy +
-Flask-Migrate (Alembic) · Flask-Login (single admin account) · Flask-WTF
+Flask-Migrate (Alembic) · Flask-Login (per-user accounts) · Flask-WTF
 (CSRF everywhere, including JSON fetches) · Gunicorn · systemd · pytest.
 
 ## Layout
@@ -45,12 +50,12 @@ Flask-Migrate (Alembic) · Flask-Login (single admin account) · Flask-WTF
 app/
   __init__.py       app factory, headers, error handlers, template helpers
   config.py         production / development / testing configs
-  models.py         Project, Task (self-referential), TaskDate, User, DeletedBatch
+  models.py         User, Project, Task (self-referential), TaskDate, DeletedBatch
   palette.py        bright project colours
   periods.py        day/week/month/year maths + timezone-aware today
   queries.py        eager loading, tree/progress preparation, due/work grouping
   utils.py          safe redirects, CSRF helpers, date helpers
-  auth.py           single-user login, lockout, remember-me
+  auth.py           registration, login, lockout, password changes, remember-me
   main.py           dashboard and preferences
   tasks.py          task CRUD, recurrence, trash/undo, bulk actions, reorder
   projects.py       project CRUD, notebook autosave, typeahead assignment
@@ -76,9 +81,10 @@ systemctl status todo
 curl http://127.0.0.1:8000/healthz   # -> {"status":"ok"}
 ```
 
-Log in at `http://<host>:8000/login` with username `admin`. On first run a
-random password is generated and stored at `instance/admin_password.txt`
-(set `TODO_ADMIN_PASSWORD` instead to choose your own; then delete the file).
+On first run, the app creates a bootstrap account named `admin`. A random
+password is stored in `instance/admin_password.txt` (or set
+`TODO_ADMIN_PASSWORD` to provide one; then delete the file). This account has
+no special privileges; additional users can sign up at `/signup`.
 
 To manage the service:
 
@@ -120,7 +126,7 @@ Set these in `.env` or the systemd unit:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `TODO_ADMIN_PASSWORD` | generated | Admin password; kept in sync on restart |
+| `TODO_ADMIN_PASSWORD` | generated | Bootstrap account password; used only when the database has no users |
 | `TODO_DATABASE` | `instance/todo.sqlite3` | SQLAlchemy database URL |
 | `SECRET_KEY` | `instance/secret_key` | Session/CSRF secret (file chmod 600) |
 | `TODO_TIMEZONE` | `UTC` | IANA timezone for "today" and date defaults |

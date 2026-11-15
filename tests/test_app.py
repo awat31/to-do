@@ -1,5 +1,7 @@
 import os
 
+from flask import g
+
 # Force test determinism regardless of .env / shell environment
 os.environ["FLASK_CONFIG"] = "testing"
 os.environ["TODO_ADMIN_PASSWORD"] = "test-password"
@@ -13,6 +15,11 @@ from app.periods import BadPeriod, period, period_value
 @pytest.fixture()
 def app():
     application = create_app()
+    @application.teardown_request
+    def clear_cached_login_user(_error=None):
+        # This fixture keeps an app context alive across multiple test requests.
+        g.pop("_login_user", None)
+
     ctx = application.app_context()
     ctx.push()
     db.create_all()  # tests bypass migrations (in-memory SQLite)
@@ -166,10 +173,10 @@ def test_work_and_due_grouping_spec_example(logged_in):
     db.session.add(TaskDate(task_id=task.id, date=__import__("datetime").date(2026, 2, 28)))
     db.session.commit()
 
-    feb = logged_in.get("/calendar/month/2026-02").data.decode()
-    mar = logged_in.get("/calendar/month/2026-03").data.decode()
-    year_work = logged_in.get("/calendar/year/2026?work=1").data.decode()
-    year_due = logged_in.get("/calendar/year/2026?due=1").data.decode()
+    feb = logged_in.get("/calendar/month/2026-02?layout=list").data.decode()
+    mar = logged_in.get("/calendar/month/2026-03?layout=list").data.decode()
+    year_work = logged_in.get("/calendar/year/2026?work=1&layout=list").data.decode()
+    year_due = logged_in.get("/calendar/year/2026?due=1&layout=list").data.decode()
 
     assert "Paint walls" in feb
     assert "Working on in February" in feb
@@ -223,7 +230,7 @@ def test_task_appears_in_day_week_month_year(logged_in):
 
     for kind, value in (("day", "2026-02-25"), ("week", "2026-W09"),
                         ("month", "2026-02"), ("year", "2026")):
-        page = logged_in.get(f"/calendar/{kind}/{value}").data.decode()
+        page = logged_in.get(f"/calendar/{kind}/{value}?layout=list").data.decode()
         assert "Due today" in page, f"missing in {kind} view"
 
 
@@ -490,30 +497,30 @@ def test_calendar_section_selectors(logged_in):
     db.session.commit()
 
     base = "/calendar/month/2026-02"
-    # default (no params): both sections
-    both = logged_in.get(base).data.decode()
+    # Default section selection, explicitly using the list layout.
+    both = logged_in.get(f"{base}?layout=list").data.decode()
     assert "Due in February" in both and "Working on in February" in both
     assert ">Both<" not in both
 
     # due only
-    due_only = logged_in.get(f"{base}?due=1").data.decode()
+    due_only = logged_in.get(f"{base}?due=1&layout=list").data.decode()
     assert "Due in February" in due_only
     assert "Working on in February" not in due_only
     assert "Selector due feb" in due_only and "Selector test" not in due_only
 
     # work only
-    work_only = logged_in.get(f"{base}?work=1").data.decode()
+    work_only = logged_in.get(f"{base}?work=1&layout=list").data.decode()
     assert "Working on in February" in work_only
     assert "Due in February" not in work_only
     assert "Selector test" in work_only  # the 28 Feb work-on date shows
 
     # neither selected -> explicit hint, no sections
-    none = logged_in.get(f"{base}?due=0&work=0").data.decode()
+    none = logged_in.get(f"{base}?due=0&work=0&layout=list").data.decode()
     assert "Due in February" not in none and "Working on in February" not in none
     assert 'turn on "Due" and/or "Working on"' in none
 
     # legacy ?mode= URLs keep working
-    legacy = logged_in.get(f"{base}?mode=work").data.decode()
+    legacy = logged_in.get(f"{base}?mode=work&layout=list").data.decode()
     assert "Working on in February" in legacy and "Due in February" not in legacy
 
 
@@ -1004,6 +1011,49 @@ def test_month_view_renders_overview_grid(logged_in):
     assert 'class="month-grid"' not in day
 
 
+def test_week_month_year_calendar_layouts_toggle_and_link(logged_in):
+    _create_task(logged_in, title="Calendar task", due="2026-03-03")
+
+    month = logged_in.get(
+        "/calendar/month/2026-03?due=1&work=0&layout=calendar"
+    ).data.decode()
+    assert 'class="month-grid"' in month
+    assert "class=\"section\"" not in month
+
+    month_list = logged_in.get(
+        "/calendar/month/2026-03?due=1&work=0&layout=list"
+    ).data.decode()
+    assert 'class="month-grid"' not in month_list
+    assert "Calendar task" in month_list
+    assert "layout=calendar" in month_list
+
+    week = logged_in.get(
+        "/calendar/week/2026-W10?due=1&work=0&layout=calendar"
+    ).data.decode()
+    assert 'class="week-grid"' in week
+    assert "Calendar task" in week
+    assert "/calendar/day/2026-03-03?due=1&amp;work=0" in week
+
+    week_list = logged_in.get(
+        "/calendar/week/2026-W10?due=1&work=0&layout=list"
+    ).data.decode()
+    assert 'class="week-grid"' not in week_list
+    assert "Calendar task" in week_list
+
+    year = logged_in.get(
+        "/calendar/year/2026?due=1&work=0&layout=calendar"
+    ).data.decode()
+    assert year.count('class="year-month"') == 12
+    assert "/calendar/month/2026-03?due=1&amp;work=0" in year
+    assert "year-mark-due" in year
+
+    year_list = logged_in.get(
+        "/calendar/year/2026?due=1&work=0&layout=list"
+    ).data.decode()
+    assert 'class="year-calendar"' not in year_list
+    assert "Calendar task" in year_list
+
+
 def test_pwa_manifest_and_service_worker(client):
     import json
 
@@ -1075,6 +1125,40 @@ def test_signup_rejects_duplicate_username_case_insensitively(app):
     assert User.query.count() == 2  # seeded admin + Alice
 
 
+def test_signup_and_login_casefold_unicode_usernames(app):
+    from app.models import User
+
+    _signup(app, username="Straße", password="alice-password")
+    second = app.test_client()
+    resp = second.post(
+        "/signup",
+        data={"username": "STRASSE", "password": "another-password"},
+        follow_redirects=True,
+    )
+    assert "That username is already taken." in resp.data.decode()
+    assert User.query.filter_by(username="STRASSE").first() is None
+
+    fresh = app.test_client()
+    resp = fresh.post(
+        "/login", data={"username": "STRASSE", "password": "alice-password"}
+    )
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
+
+
+def test_username_key_is_unique_in_database(app):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models import User, db
+
+    db.session.add(User(username="CaseSensitive", password_hash="unused"))
+    db.session.commit()
+    db.session.add(User(username="casesensitive", password_hash="unused"))
+    with pytest.raises(IntegrityError):
+        db.session.commit()
+    db.session.rollback()
+
+
 def test_signup_rejects_short_password(app):
     from app.models import User
 
@@ -1101,21 +1185,22 @@ def test_login_username_is_case_insensitive(app):
 
 
 def test_created_tasks_projects_and_trash_are_owned_by_creator(app):
-    from app.models import DeletedBatch, Project, Task, User
+    from app.models import DeletedBatch, Project, User
 
     alice = _signup(app)
     alice_user = User.query.filter_by(username="alice").one()
 
     task = _create_task(alice, title="Owned by alice")
+    task_user_id = task.user_id
     alice.post("/projects/new", data={"name": "Alice owned", "color": "pink"})
     project = Project.query.filter_by(name="Alice owned").one()
     alice.post(f"/tasks/{task.id}/delete")
     batch = DeletedBatch.query.one()
 
-    assert task.user_id == alice_user.id
+    assert task_user_id == alice_user.id
     assert project.user_id == alice_user.id
     assert batch.user_id == alice_user.id
-    assert task.user_id != User.query.filter_by(username="admin").one().id
+    assert task_user_id != User.query.filter_by(username="admin").one().id
 
 
 def test_users_cannot_see_each_others_tasks_or_projects(app, logged_in):
@@ -1161,8 +1246,8 @@ def test_users_cannot_see_each_others_tasks_or_projects(app, logged_in):
     assert "Admin secret" not in [r["title"] for r in alice_results]
 
     # The admin's pre-existing data did not disappear when a user signed up.
-    assert "Admin secret" in logged_in.get("/").data.decode()
-    assert "Alice secret" in alice.get("/").data.decode()
+    assert "Admin secret" in logged_in.get("/tasks/").data.decode()
+    assert "Alice secret" in alice.get("/tasks/").data.decode()
     assert admin_project.id != Project.query.filter_by(name="Alice project").one().id
     assert admin_task.user_id != alice_task.user_id
 
@@ -1249,6 +1334,37 @@ def test_cannot_attach_task_to_another_users_project_or_parent(app, logged_in):
     assert resp.status_code == 400
     db.session.expire_all()
     assert db.session.get(Task, alice_task.id).project_id is None
+
+
+def test_database_rejects_cross_user_task_relations(app):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models import Project, Task, User, db
+
+    owner = User(username="owner", password_hash="unused")
+    other = User(username="other", password_hash="unused")
+    db.session.add_all((owner, other))
+    db.session.flush()
+    foreign_project = Project(user_id=other.id, name="Other project")
+    foreign_parent = Task(user_id=other.id, title="Other parent")
+    foreign_source = Task(user_id=other.id, title="Other recurrence source")
+    db.session.add_all((foreign_project, foreign_parent, foreign_source))
+    db.session.commit()
+
+    invalid_tasks = (
+        Task(user_id=owner.id, title="Foreign project", project_id=foreign_project.id),
+        Task(user_id=owner.id, title="Foreign parent", parent_id=foreign_parent.id),
+        Task(
+            user_id=owner.id,
+            title="Foreign recurrence source",
+            recurrence_source_id=foreign_source.id,
+        ),
+    )
+    for task in invalid_tasks:
+        db.session.add(task)
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
 
 
 def test_trash_is_per_user(app, logged_in):

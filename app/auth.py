@@ -1,4 +1,4 @@
-"""Single-user authentication (admin account)."""
+"""Account registration, authentication, and password management."""
 import math
 
 from flask import (
@@ -12,7 +12,6 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required, login_user, logout_user
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from .forms import ChangePasswordForm, LoginForm, SignupForm
@@ -23,10 +22,8 @@ bp = Blueprint("auth", __name__)
 
 
 def _find_user(username: str) -> User | None:
-    """Usernames are unique regardless of letter case."""
-    return User.query.filter(
-        func.lower(User.username) == username.casefold()
-    ).first()
+    """Look up a username using the same case-folded key enforced by the DB."""
+    return User.query.filter_by(username_key=username.casefold()).first()
 
 
 @bp.route("/signup", methods=("GET", "POST"))

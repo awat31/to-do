@@ -4,9 +4,9 @@ import sqlite3
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import UniqueConstraint, event, text
+from sqlalchemy import ForeignKeyConstraint, UniqueConstraint, event, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, validates
 from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
@@ -56,9 +56,13 @@ class TimestampMixin:
 
 class User(db.Model, UserMixin, TimestampMixin):
     __tablename__ = "user"
+    __table_args__ = (
+        UniqueConstraint("username_key", name="uq_user_username_key"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    username_key = db.Column(db.String(255), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
@@ -66,6 +70,11 @@ class User(db.Model, UserMixin, TimestampMixin):
     projects = db.relationship("Project", back_populates="user")
     tasks = db.relationship("Task", back_populates="user")
     deleted_batches = db.relationship("DeletedBatch", back_populates="user")
+
+    @validates("username")
+    def _normalize_username(self, key: str, value: str) -> str:
+        self.username_key = value.casefold()
+        return value
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -92,6 +101,9 @@ class User(db.Model, UserMixin, TimestampMixin):
 
 class Project(db.Model, TimestampMixin):
     __tablename__ = "project"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_project_id_user_id"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
@@ -106,6 +118,7 @@ class Project(db.Model, TimestampMixin):
     tasks = db.relationship(
         "Task", back_populates="project", lazy="dynamic",
         order_by="Task.position, Task.id",
+        foreign_keys="Task.project_id",
     )
 
     @property
@@ -144,6 +157,25 @@ class TaskDate(db.Model, TimestampMixin):
 
 class Task(db.Model, TimestampMixin):
     __tablename__ = "task"
+    __table_args__ = (
+        UniqueConstraint("id", "user_id", name="uq_task_id_user_id"),
+        ForeignKeyConstraint(
+            ["project_id", "user_id"],
+            ["project.id", "project.user_id"],
+            name="fk_task_project_owner",
+        ),
+        ForeignKeyConstraint(
+            ["parent_id", "user_id"],
+            ["task.id", "task.user_id"],
+            name="fk_task_parent_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["recurrence_source_id", "user_id"],
+            ["task.id", "task.user_id"],
+            name="fk_task_recurrence_source_owner",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
@@ -168,7 +200,9 @@ class Task(db.Model, TimestampMixin):
     )
 
     user = db.relationship("User", back_populates="tasks")
-    project = db.relationship("Project", back_populates="tasks")
+    project = db.relationship(
+        "Project", back_populates="tasks", foreign_keys=[project_id]
+    )
     parent = db.relationship(
         "Task", remote_side=[id], foreign_keys=[parent_id],
         backref=db.backref("children", order_by="Task.position, Task.id"),
