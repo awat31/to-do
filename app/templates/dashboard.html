@@ -4,7 +4,10 @@
 {% block title %}Dashboard · To-Do{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Today <span class="muted">{{ today | human_date }}</span></h1>
+  <div>
+    <h1>Your to-do list, {{ current_user.display_name }}</h1>
+    <p class="muted">{{ today | human_date }}</p>
+  </div>
   <div class="head-actions">
     {{ hide_completed_toggle(request.path) }}
     <a class="btn btn-primary" href="{{ url_for('tasks.create') }}">New task</a>

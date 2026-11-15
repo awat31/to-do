@@ -63,6 +63,7 @@ class User(db.Model, UserMixin, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     username_key = db.Column(db.String(255), nullable=False)
+    display_name = db.Column(db.String(80), nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, nullable=False, default=False, server_default=false())
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
@@ -72,9 +73,15 @@ class User(db.Model, UserMixin, TimestampMixin):
     tasks = db.relationship("Task", back_populates="user")
     deleted_batches = db.relationship("DeletedBatch", back_populates="user")
 
+    @property
+    def is_protected_admin(self) -> bool:
+        return self.username_key == "admin"
+
     @validates("username")
     def _normalize_username(self, key: str, value: str) -> str:
         self.username_key = value.casefold()
+        if not self.display_name:
+            self.display_name = value
         return value
 
     def set_password(self, password: str) -> None:

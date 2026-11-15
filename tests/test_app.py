@@ -1126,13 +1126,53 @@ def test_signup_creates_hashed_password_and_logs_in(app):
 
     user = User.query.filter_by(username="Alice").one()
     assert not user.is_admin
+    assert user.display_name == "Alice"
     assert user.password_hash != "alice-password"
     assert "alice-password" not in user.password_hash
     assert user.check_password("alice-password")
 
     # Signup signs the new account in.
     assert client.get("/").status_code == 200
-    assert 'href="/account"' in client.get("/").data.decode()
+    dashboard = client.get("/").data.decode()
+    assert 'href="/account"' in dashboard
+    assert "Your to-do list, Alice" in dashboard
+
+
+def test_user_can_update_display_name_and_dashboard_greeting(app):
+    from app.models import User
+
+    client = _signup(app, username="steve01")
+    user = User.query.filter_by(username="steve01").one()
+    assert user.display_name == "steve01"
+
+    response = client.post(
+        "/account/display-name",
+        data={"display_name": "  Steve  "},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Display name updated." in response.data.decode()
+    db.session.expire_all()
+    assert db.session.get(User, user.id).display_name == "Steve"
+    dashboard = client.get("/").data.decode()
+    assert "Your to-do list, Steve" in dashboard
+    assert "Your to-do list, steve01" not in dashboard
+
+
+def test_display_name_cannot_be_empty(app):
+    from app.models import User
+
+    client = _signup(app, username="steve01")
+    user = User.query.filter_by(username="steve01").one()
+
+    response = client.post(
+        "/account/display-name",
+        data={"display_name": "   "},
+    )
+    assert response.status_code == 400
+    assert "Display Name" in response.data.decode()
+    db.session.expire_all()
+    assert db.session.get(User, user.id).display_name == "steve01"
 
 
 def test_signup_rejects_duplicate_username_case_insensitively(app):
@@ -1482,10 +1522,52 @@ def test_admin_user_management_is_admin_only(app, logged_in):
     assert 'href="/admin/users"' not in alice.get("/").data.decode()
     assert alice.get("/admin/users").status_code == 403
     assert alice.post(f"/admin/users/{admin.id}/delete").status_code == 403
+    assert alice.post(
+        f"/admin/users/{alice_user.id}/admin",
+        data={"is_admin": "1"},
+    ).status_code == 403
     self_delete = logged_in.post(f"/admin/users/{admin.id}/delete")
     assert self_delete.status_code == 302
     assert self_delete.headers["Location"].endswith("/admin/users")
     assert db.session.get(User, admin.id) is not None
+
+
+def test_admin_can_grant_revoke_and_self_revoke_admin_rights(app, logged_in):
+    from app.models import User
+
+    alice = _signup(app)
+    alice_user = User.query.filter_by(username="alice").one()
+    user_id = alice_user.id
+
+    admin_page = logged_in.get("/admin/users").data.decode()
+    assert "Make admin" in admin_page
+    assert logged_in.post(
+        f"/admin/users/{user_id}/admin",
+        data={"is_admin": "1"},
+    ).status_code == 302
+    assert db.session.get(User, user_id).is_admin
+    assert alice.get("/admin/users").status_code == 200
+
+    assert "Revoke admin" in alice.get("/admin/users").data.decode()
+    assert logged_in.post(
+        f"/admin/users/{user_id}/admin",
+        data={"is_admin": "0"},
+    ).status_code == 302
+    db.session.expire_all()
+    assert not db.session.get(User, user_id).is_admin
+    assert alice.get("/admin/users").status_code == 403
+
+    logged_in.post(f"/admin/users/{user_id}/admin", data={"is_admin": "1"})
+    assert db.session.get(User, user_id).is_admin
+    response = alice.post(
+        f"/admin/users/{user_id}/admin",
+        data={"is_admin": "0"},
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/account")
+    db.session.expire_all()
+    assert not db.session.get(User, user_id).is_admin
+    assert alice.get("/admin/users").status_code == 403
 
 
 def test_admin_user_deletion_requires_csrf(csrf_client, app):
@@ -1499,15 +1581,21 @@ def test_admin_user_deletion_requires_csrf(csrf_client, app):
     response = csrf_client.post(f"/admin/users/{user_id}/delete")
     assert response.status_code == 400
     assert db.session.get(User, user_id) is not None
+    response = csrf_client.post(
+        f"/admin/users/{user_id}/admin",
+        data={"is_admin": "1"},
+    )
+    assert response.status_code == 400
+    assert not db.session.get(User, user_id).is_admin
 
 
-def test_admin_cannot_delete_own_account(app, logged_in):
+def test_builtin_admin_cannot_delete_own_account(app, logged_in):
     from app.models import User
 
     admin = User.query.filter_by(username="admin").one()
     admin_id = admin.id
     page = logged_in.get("/account").data.decode()
-    assert "Administrator accounts cannot be deleted." in page
+    assert "The built-in admin account cannot be deleted." in page
     assert "Delete my account" not in page
 
     response = logged_in.post(
@@ -1516,9 +1604,58 @@ def test_admin_cannot_delete_own_account(app, logged_in):
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert "Administrator accounts cannot be deleted." in response.data.decode()
+    assert "The built-in admin account cannot be deleted." in response.data.decode()
     db.session.expire_all()
     assert db.session.get(User, admin_id).is_admin
+
+
+def test_builtin_admin_cannot_be_deleted_by_another_admin(app):
+    from app.models import User
+
+    original_admin = User.query.filter_by(username="admin").one()
+    original_admin_id = original_admin.id
+    moderator = _signup(app, username="moderator")
+    moderator_user = User.query.filter_by(username="moderator").one()
+    moderator_user.is_admin = True
+    db.session.commit()
+
+    page = moderator.get("/admin/users").data.decode()
+    assert "This account can't be deleted" in page
+    assert f'action="/admin/users/{original_admin_id}/delete"' not in page
+
+    response = moderator.post(
+        f"/admin/users/{original_admin_id}/delete",
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "The built-in admin account cannot be deleted." in response.data.decode()
+    db.session.expire_all()
+    assert db.session.get(User, original_admin_id).is_protected_admin
+
+
+def test_builtin_admin_cannot_delete_itself_after_admin_rights_are_revoked(
+    app, logged_in,
+):
+    from app.models import User
+
+    admin = User.query.filter_by(username="admin").one()
+    admin_id = admin.id
+    admin.is_admin = False
+    db.session.commit()
+
+    page = logged_in.get("/account").data.decode()
+    assert "The built-in admin account cannot be deleted." in page
+    assert "Delete my account" not in page
+
+    response = logged_in.post(
+        "/account/delete",
+        data={"current_password": "test-password"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "The built-in admin account cannot be deleted." in response.data.decode()
+    db.session.expire_all()
+    assert db.session.get(User, admin_id) is not None
 
 
 def test_admin_delete_user_cascades_through_user_data(app, logged_in):
@@ -1565,13 +1702,16 @@ def test_admin_delete_user_cascades_through_user_data(app, logged_in):
     assert db.session.get(Task, admin_task_id) is not None
 
 
-def test_user_can_delete_only_their_own_account_and_data(app):
+@pytest.mark.parametrize("is_admin", [False, True])
+def test_user_can_delete_only_their_own_account_and_data(app, is_admin):
     import datetime as dt
 
     from app.models import DeletedBatch, Project, Task, TaskDate, User
 
     alice = _signup(app)
     alice_user = User.query.filter_by(username="alice").one()
+    alice_user.is_admin = is_admin
+    db.session.commit()
     admin = User.query.filter_by(username="admin").one()
     admin_task = Task(user_id=admin.id, title="Keep admin task")
     db.session.add(admin_task)
@@ -1609,6 +1749,7 @@ def test_user_can_delete_only_their_own_account_and_data(app):
     assert resp.status_code == 200
     assert "all of its data were deleted" in resp.data.decode()
     assert alice.get("/").status_code == 302
+    assert alice.get("/login").status_code == 200
 
     db.session.expire_all()
     assert db.session.get(User, alice_id) is None
@@ -1617,3 +1758,41 @@ def test_user_can_delete_only_their_own_account_and_data(app):
     assert TaskDate.query.filter_by(task_id=task_id).count() == 0
     assert db.session.get(DeletedBatch, batch_id) is None
     assert db.session.get(Task, admin_task_id) is not None
+
+
+def test_admin_can_delete_self_from_user_list_and_is_logged_out(app, logged_in):
+    from app.models import User
+
+    admin = User(username="moderator", is_admin=True)
+    admin.set_password("moderator-password")
+    other_admin = User(username="other-admin", is_admin=True)
+    other_admin.set_password("other-password")
+    db.session.add(admin)
+    db.session.add(other_admin)
+    db.session.commit()
+    admin_id = admin.id
+    other_admin_id = other_admin.id
+
+    client = app.test_client()
+    client.post(
+        "/login",
+        data={"username": "moderator", "password": "moderator-password"},
+    )
+    page = client.get("/admin/users").data.decode()
+    assert "Delete my account" in page
+
+    response = logged_in.post(
+        f"/admin/users/{other_admin_id}/delete",
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert db.session.get(User, other_admin_id) is None
+
+    response = client.post(
+        f"/admin/users/{admin_id}/delete",
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "all of its data were deleted" in response.data.decode()
+    assert client.get("/login").status_code == 200
+    assert db.session.get(User, admin_id) is None

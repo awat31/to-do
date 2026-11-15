@@ -58,6 +58,14 @@ class ChangePasswordForm(FlaskForm):
     )
 
 
+class DisplayNameForm(FlaskForm):
+    display_name = StringField(
+        "Display Name",
+        filters=(_strip,),
+        validators=(DataRequired(), Length(max=80)),
+    )
+
+
 class DeleteAccountForm(FlaskForm):
     current_password = PasswordField(
         "Current password", validators=(DataRequired(),),

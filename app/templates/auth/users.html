@@ -4,7 +4,7 @@
 <div class="page-head">
   <h1>Users</h1>
 </div>
-<p class="hint">Deleting a user permanently removes their tasks, projects, schedules, and trash.</p>
+<p class="hint">Deleting a user permanently removes their tasks, projects, schedules, and trash. Admins can also grant or revoke administrator privileges.</p>
 
 <div class="trash-list">
   {% for user in users %}
@@ -13,16 +13,41 @@
         <strong>{{ user.username }}</strong>
         <span class="muted">{{ "Administrator" if user.is_admin else "User" }}</span>
       </div>
-      {% if user.id == current_user.id %}
-        <span class="muted">This account can't be deleted</span>
-      {% else %}
-        <form method="post" action="{{ url_for('auth.delete_user', user_id=user.id) }}"
+      <div class="head-actions">
+        {% if user.id == current_user.id %}
+          {% set admin_confirm = "Remove your administrator rights? You will lose access to this page." %}
+        {% elif user.is_admin %}
+          {% set admin_confirm = "Revoke administrator privileges from " ~ user.username ~ "?" %}
+        {% else %}
+          {% set admin_confirm = "Grant administrator privileges to " ~ user.username ~ "?" %}
+        {% endif %}
+        {% if user.id == current_user.id %}
+          {% set delete_confirm = "Permanently delete your account and all of your data? You will be logged out." %}
+        {% else %}
+          {% set delete_confirm = "Permanently delete " ~ user.username ~ " and all of their data?" %}
+        {% endif %}
+        <form method="post" action="{{ url_for('auth.set_admin', user_id=user.id) }}"
               class="inline-form"
-              data-confirm="Permanently delete {{ user.username }} and all of their data?">
+              data-confirm="{{ admin_confirm }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-danger btn-sm" type="submit">Delete user</button>
+          <input type="hidden" name="is_admin" value="{{ 0 if user.is_admin else 1 }}">
+          <button class="btn btn-soft btn-sm" type="submit">
+            {{ "Revoke admin" if user.is_admin else "Make admin" }}
+          </button>
         </form>
-      {% endif %}
+        {% if user.is_protected_admin %}
+          <span class="muted">This account can't be deleted</span>
+        {% else %}
+          <form method="post" action="{{ url_for('auth.delete_user', user_id=user.id) }}"
+                class="inline-form"
+                data-confirm="{{ delete_confirm }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-danger btn-sm" type="submit">
+              {{ "Delete my account" if user.id == current_user.id else "Delete user" }}
+            </button>
+          </form>
+        {% endif %}
+      </div>
     </div>
   {% else %}
     <p class="empty big">No users found.</p>

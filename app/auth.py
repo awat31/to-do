@@ -15,7 +15,13 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy.exc import IntegrityError
 
-from .forms import ChangePasswordForm, DeleteAccountForm, LoginForm, SignupForm
+from .forms import (
+    ChangePasswordForm,
+    DeleteAccountForm,
+    DisplayNameForm,
+    LoginForm,
+    SignupForm,
+)
 from .models import User, db, utcnow
 from .utils import safe_next
 
@@ -102,6 +108,7 @@ def login():
 @login_required
 def account():
     form = ChangePasswordForm()
+    display_form = DisplayNameForm(obj=current_user)
     delete_form = DeleteAccountForm()
     if form.validate_on_submit():
         if not current_user.check_password(form.current_password.data):
@@ -112,7 +119,30 @@ def account():
             db.session.commit()
             flash("Password changed.", "ok")
             return redirect(url_for("auth.account"))
-    return render_template("auth/account.html", form=form, delete_form=delete_form)
+    return render_template(
+        "auth/account.html",
+        form=form,
+        display_form=display_form,
+        delete_form=delete_form,
+    )
+
+
+@bp.route("/account/display-name", methods=("POST",))
+@login_required
+def update_display_name():
+    form = DisplayNameForm()
+    if form.validate_on_submit():
+        current_user.display_name = form.display_name.data
+        db.session.commit()
+        flash("Display name updated.", "ok")
+        return redirect(url_for("auth.account"))
+
+    return render_template(
+        "auth/account.html",
+        form=ChangePasswordForm(),
+        display_form=form,
+        delete_form=DeleteAccountForm(),
+    ), 400
 
 
 def _require_admin() -> None:
@@ -140,21 +170,61 @@ def delete_user(user_id: int):
     user = db.session.get(User, user_id)
     if user is None:
         abort(404)
-    if user.id == current_user.id:
-        flash("Use your account page to delete your own account.", "error")
+    if user.is_protected_admin:
+        flash("The built-in admin account cannot be deleted.", "error")
         return redirect(url_for("auth.admin_users"))
 
+    is_self = user.id == current_user.id
     username = user.username
     _delete_user(user.id)
+    if is_self:
+        session.clear()
+        logout_user()
+        flash(f"Account {username!r} and all of its data were deleted.", "ok")
+        return redirect(url_for("auth.login"))
+
     flash(f"Deleted {username!r} and all of their data.", "ok")
+    return redirect(url_for("auth.admin_users"))
+
+
+@bp.route("/admin/users/<int:user_id>/admin", methods=("POST",))
+@login_required
+def set_admin(user_id: int):
+    _require_admin()
+    value = request.form.get("is_admin")
+    if value not in ("0", "1"):
+        abort(400)
+
+    user = db.session.get(User, user_id)
+    if user is None:
+        abort(404)
+
+    make_admin = value == "1"
+    if user.is_admin == make_admin:
+        label = "an administrator" if make_admin else "a regular user"
+        flash(f"{user.username!r} is already {label}.", "error")
+        return redirect(url_for("auth.admin_users"))
+
+    user.is_admin = make_admin
+    db.session.commit()
+    if user.id == current_user.id:
+        flash("Your administrator privileges were revoked.", "ok")
+        return redirect(url_for("auth.account"))
+
+    flash(
+        f"Granted administrator privileges to {user.username!r}."
+        if make_admin
+        else f"Revoked administrator privileges from {user.username!r}.",
+        "ok",
+    )
     return redirect(url_for("auth.admin_users"))
 
 
 @bp.route("/account/delete", methods=("POST",))
 @login_required
 def delete_account():
-    if current_user.is_admin:
-        flash("Administrator accounts cannot be deleted.", "error")
+    if current_user.is_protected_admin:
+        flash("The built-in admin account cannot be deleted.", "error")
         return redirect(url_for("auth.account"))
 
     form = DeleteAccountForm()
@@ -171,6 +241,7 @@ def delete_account():
     return render_template(
         "auth/account.html",
         form=ChangePasswordForm(),
+        display_form=DisplayNameForm(obj=current_user),
         delete_form=form,
     ), 400
 

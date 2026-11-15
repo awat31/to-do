@@ -6,6 +6,19 @@
 </div>
 
 <div class="auth-wrap auth-wrap-left">
+  <form method="post" action="{{ url_for('auth.update_display_name') }}"
+        class="stack form-card auth-card">
+    {{ display_form.hidden_tag() }}
+    <h2>Display Name</h2>
+    <div class="field">
+      {{ display_form.display_name.label }}
+      {{ display_form.display_name(class="input", autocomplete="nickname") }}
+      {% for e in display_form.display_name.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      <span class="hint">Shown in your Dashboard greeting.</span>
+    </div>
+    <button class="btn btn-primary" type="submit">Save display name</button>
+  </form>
+
   <form method="post" class="stack form-card auth-card">
     {{ form.hidden_tag() }}
     <h2>Change password</h2>
@@ -25,10 +38,10 @@
     <button class="btn btn-primary" type="submit">Update password</button>
   </form>
 
-  {% if current_user.is_admin %}
+  {% if current_user.is_protected_admin %}
     <div class="form-card auth-card">
       <h2>Delete your account</h2>
-      <p class="hint">Administrator accounts cannot be deleted.</p>
+      <p class="hint">The built-in admin account cannot be deleted.</p>
     </div>
   {% else %}
     <form method="post" action="{{ url_for('auth.delete_account') }}"

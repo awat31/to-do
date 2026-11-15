@@ -27,8 +27,10 @@ constraints.
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
 - **Accounts** — open registration, private user data, password changes, and
-  self-service deletion for regular accounts. The admin account can view and
-  delete other users, but cannot delete itself. There is no password-reset flow.
+  customizable display names, and self-service deletion for every account
+  except the built-in `admin`. Admins can view and delete users, grant or revoke
+  admin privileges, and revoke their own privileges or delete their own
+  account. There is no password-reset flow.
 - **Mobile and installable shell** — responsive layout and a PWA manifest.
   Static assets are cached and an offline page is shown when navigation cannot
   reach the server; task pages and task data are not available offline.
@@ -55,9 +57,10 @@ generated password.
 
 ### Dashboard and tasks
 
-The dashboard separates tasks **Due today** and **Working on today**, and
-shows upcoming due tasks, overdue tasks, and open unscheduled tasks. The
-**Hide completed** control is a per-session preference.
+The dashboard greets you with **Welcome Back** and your display name, then
+separates tasks **Due today** and **Working on today**. It also shows upcoming
+due tasks, overdue tasks, and open unscheduled tasks. The **Hide completed**
+control is a per-session preference.
 
 Choose **New task** to create a task. Add a title, optional notes and due date,
 and optionally choose a project or parent task. To make it recurring, choose
@@ -101,14 +104,24 @@ Use **Undo** immediately after a deletion, or restore a batch from Trash. When
 a task is deleted, batches older than 30 days and batches beyond the newest 20
 are pruned. Deleting a batch or emptying Trash is permanent.
 
-Select your username in the navigation to change your password. To log out,
-use **Log out**.
+Select your username in the navigation to set your display name or change your
+password. Your display name defaults to your username and can be changed at
+any time. To log out, use **Log out**.
 
 Administrators can select **Users** in the navigation to see registered
-accounts and delete other users. Use the account page's **Delete my account** form to delete a regular account;
-enter the current password to confirm. Administrators cannot delete themselves.
-Either admin deletion or regular-user self-deletion permanently removes that
-user's tasks, projects, schedules, and trash.
+accounts, delete any user (including themselves, except for the protected
+built-in `admin` account), or use **Make admin** and **Revoke admin** to change
+administrator privileges. When an administrator deletes their own account,
+they are logged out. An administrator may also revoke their own privileges;
+they are then returned to their account page and lose access to admin tools. If
+the last administrator deletes themselves or revokes their rights, no one can
+manage users until an administrator is restored directly in the database.
+
+Use the account page's **Delete my account** form to delete any account except
+the protected built-in `admin`; enter the current password to confirm. Admins
+can also delete themselves from the Users list. Self-deletion logs you out.
+Deletion permanently removes the account's tasks, projects, schedules, and
+trash.
 
 ### Install and offline behavior
 
