@@ -1,4 +1,7 @@
 # Script to install the app to your Linux machine
+## This will perform a basic install into the current working directory.
+## Your user will require sudo to install this application.
+## For manual install, see the README.md
 
 cwd=$(pwd)
 user=$(id -un)
