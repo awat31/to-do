@@ -31,7 +31,9 @@ def due_in(
     )
     if not include_done:
         query = query.filter(Task.done.is_(False))
-    return query.order_by(Task.due_date, Task.title).all()
+    # Task.id tiebreak keeps the ordering deterministic when two tasks share
+    # a due date and title.
+    return query.order_by(Task.due_date, Task.title, Task.id).all()
 
 
 def work_rows(
@@ -59,7 +61,7 @@ def work_rows(
         query = query.filter(Task.done.is_(False))
     return (
         query
-        .order_by(TaskDate.date, Task.title)
+        .order_by(TaskDate.date, Task.title, Task.id)
         .with_entities(Task, TaskDate.date)
         .all()
     )

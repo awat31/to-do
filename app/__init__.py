@@ -8,8 +8,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import find_dotenv, load_dotenv
-from flask import Flask, render_template, send_from_directory
-from flask_login import LoginManager, current_user
+from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
+from flask_login import LoginManager, current_user, logout_user
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
 from sqlalchemy.exc import IntegrityError
@@ -25,20 +25,44 @@ login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 
 _DEFAULT_HIGHLIGHT = "#f97316"
-_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+_asset_version_cache: dict[str, str] = {}
 
 
 def _asset_version(app: Flask) -> str:
-    """Return a content-based cache key for the static assets."""
+    """Return a content-based cache key for the static assets.
+
+    Hashing file contents on every render is not free, so the result is
+    cached per static-folder path. The cache key is the fingerprint of the
+    file set — each file's path, size and mtime_ns — which is stable across
+    restarts, changes whenever a file is edited (even twice within the same
+    clock tick, since a rewrite changes size or mtime), and costs no reads.
+    """
     root = Path(app.static_folder or "")
+    cache_key = str(root)
+    try:
+        files = sorted(path for path in root.rglob("*") if path.is_file())
+        fingerprint = hashlib.sha256()
+        for path in files:
+            stat = path.stat()
+            fingerprint.update(path.relative_to(root).as_posix().encode("utf-8"))
+            fingerprint.update(f"\0{stat.st_size}\0{stat.st_mtime_ns}\0".encode("ascii"))
+    except OSError:
+        return "0" * 16
+    fp_hex = fingerprint.hexdigest()
+    cached = _asset_version_cache.get(cache_key)
+    if cached is not None and cached[0] == fp_hex:
+        return cached[1]
     digest = hashlib.sha256()
-    for path in sorted(path for path in root.rglob("*") if path.is_file()):
+    for path in files:
         digest.update(path.relative_to(root).as_posix().encode("utf-8"))
         digest.update(b"\0")
         with path.open("rb") as asset:
             for chunk in iter(lambda: asset.read(65536), b""):
                 digest.update(chunk)
-    return digest.hexdigest()[:16]
+    version = digest.hexdigest()[:16]
+    _asset_version_cache[cache_key] = (fp_hex, version)
+    return version
 
 
 def _appearance_colors(value: str | None) -> tuple[str, str]:
@@ -210,6 +234,31 @@ def create_app(config_class=None) -> Flask:
         db.session.info["todo_task_version"] = (
             db.session.info.get("todo_task_version", 0) + 1
         )
+
+    @app.before_request
+    def reject_stale_sessions():
+        """Log out sessions that predate the user's latest password change.
+
+        Password change bumps ``User.session_version``; a session carrying
+        an older (or missing, post-rollover) stamp is torn down here so a
+        stolen cookie cannot outlive the password it was minted under.
+        Remember-me cookies are also cleared via ``logout_user``'s marker.
+        """
+        if not current_user.is_authenticated:
+            return None
+        if request.endpoint in ("auth.login", "auth.logout", "static", "healthz"):
+            return None
+        stored = session.get("_session_version")
+        if stored is not None and stored != (current_user.session_version or 0):
+            logout_user()
+            session.clear()
+            flash(
+                "Your session ended because your password was changed. "
+                "Please sign in again.",
+                "ok",
+            )
+            return redirect(url_for("auth.login"))
+        return None
 
     @app.context_processor
     def inject_globals():

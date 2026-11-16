@@ -39,7 +39,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 class Config:
     """Shared defaults. Secrets are injected by the app factory from the
     instance directory so they survive across environments."""
-    SECRET_KEY = os.environ.get("SECRET_KEY")
+    SECRET_KEY = os.environ.get("SECRET_KEY") or None
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {"pool_pre_ping": True}
     WTF_CSRF_ENABLED = True
@@ -55,6 +55,11 @@ class Config:
     REMEMBER_COOKIE_SAMESITE = "Lax"
     LOGIN_MAX_ATTEMPTS = _env_int("TODO_LOGIN_MAX_ATTEMPTS", 5)
     LOGIN_LOCK_MINUTES = _env_int("TODO_LOGIN_LOCK_MINUTES", 15)
+    # Per-IP throttles (per gunicorn worker): login attempts and signups.
+    LOGIN_IP_LIMIT = _env_int("TODO_LOGIN_IP_LIMIT", 20)
+    LOGIN_IP_WINDOW_MINUTES = _env_int("TODO_LOGIN_IP_WINDOW_MINUTES", 15)
+    SIGNUP_IP_LIMIT = _env_int("TODO_SIGNUP_IP_LIMIT", 5)
+    SIGNUP_IP_WINDOW_HOURS = _env_int("TODO_SIGNUP_IP_WINDOW_HOURS", 1)
     # Notes limits (characters) persisted by the autosave endpoints.
     TASK_NOTES_LIMIT = _env_int("TODO_TASK_NOTES_LIMIT", 100_000)
     PROJECT_NOTES_LIMIT = _env_int("TODO_PROJECT_NOTES_LIMIT", 200_000)
@@ -87,6 +92,11 @@ class TestingConfig(Config):
     WTF_CSRF_ENABLED = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     LOGIN_MAX_ATTEMPTS = 99  # tests intentionally exercise failed logins
+    # The in-process per-IP limiter is exercised by its own dedicated tests
+    # with a small limit; the shared test suite logs in many times from one
+    # client, so the default throttle is disabled here.
+    LOGIN_IP_LIMIT = 1_000_000
+    SIGNUP_IP_LIMIT = 1_000_000
 
 
 _CONFIGS = {

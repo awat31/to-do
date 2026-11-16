@@ -102,28 +102,33 @@
 
     <section class="section side-card">
       <h2>Sub-tree actions</h2>
-      <div class="stack">
+      <div class="subtree-actions">
         <form method="post" action="{{ url_for('tasks.complete_subtree', task_id=task.id) }}"
               data-confirm="Mark this task and every sub-task as done?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-soft btn-sm" type="submit">Mark whole subtree complete</button>
+          <button class="btn btn-soft" type="submit">Mark whole subtree complete</button>
         </form>
-        <form method="post" action="{{ url_for('tasks.reassign_subtree', task_id=task.id) }}" class="field-row">
+        <form method="post" action="{{ url_for('tasks.reassign_subtree', task_id=task.id) }}"
+              class="subtree-actions-row">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <select name="project_id" class="input">
+          <select name="project_id" class="input" aria-label="Project for this task and its sub-tasks">
             <option value="">— No project —</option>
             {% for project in projects %}
               <option value="{{ project.id }}" {{ 'selected' if task.project_id == project.id }}>{{ project.name }}</option>
             {% endfor %}
           </select>
-          <button class="btn btn-soft btn-sm" type="submit">Change project</button>
+          <button class="btn btn-soft" type="submit">Change project</button>
         </form>
-        <form method="post" action="{{ url_for('tasks.reschedule_subtree', task_id=task.id) }}" class="field-row">
+        <form method="post" action="{{ url_for('tasks.reschedule_subtree', task_id=task.id) }}"
+              class="subtree-actions-row">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="date" name="due_date" class="input input-date" value="{{ task.due_date.isoformat() if task.due_date else '' }}">
-          <button class="btn btn-soft btn-sm" type="submit">Set due date</button>
+          <input type="date" name="due_date" class="input input-date"
+                 value="{{ task.due_date.isoformat() if task.due_date else '' }}"
+                 aria-label="Due date for this task and its sub-tasks">
+          <button class="btn btn-soft" type="submit">Set due date</button>
         </form>
       </div>
+      <p class="hint">Applies to this task and every sub-task under it.</p>
     </section>
 
   </aside>

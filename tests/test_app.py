@@ -798,6 +798,112 @@ def test_login_lockout_after_repeated_failures(app, client):
     assert resp.status_code == 302
 
 
+def test_login_ip_rate_limit(app, client):
+    """Excess logins from one IP are throttled with 429 before any DB work."""
+    from app import auth as auth_module
+
+    app.config["LOGIN_IP_LIMIT"] = 3
+    app.config["LOGIN_IP_WINDOW_MINUTES"] = 15
+    auth_module._login_limiter.reset("login:127.0.0.1")
+    try:
+        for _ in range(3):
+            resp = client.post("/login", data={"username": "admin", "password": "wrong"})
+            assert resp.status_code == 200
+        resp = client.post(
+            "/login", data={"username": "admin", "password": "test-password"}
+        )
+        assert resp.status_code == 429
+    finally:
+        auth_module._login_limiter.reset("login:127.0.0.1")
+
+
+def test_signup_ip_rate_limit(app, client):
+    from app import auth as auth_module
+
+    app.config["SIGNUP_IP_LIMIT"] = 2
+    app.config["SIGNUP_IP_WINDOW_HOURS"] = 1
+    auth_module._signup_limiter.reset("signup:127.0.0.1")
+    try:
+        for i in range(2):
+            # Each signup uses a fresh client: after signup the client is
+            # authenticated, and an authenticated visitor is redirected
+            # before the rate limiter is consulted.
+            resp = app.test_client().post(
+                "/signup",
+                data={"username": f"ratelimit{i}", "password": "longenough1"},
+                follow_redirects=True,
+            )
+            assert resp.status_code == 200
+        resp = app.test_client().post(
+            "/signup", data={"username": "ratelimit3", "password": "longenough1"}
+        )
+        assert resp.status_code == 429
+    finally:
+        auth_module._signup_limiter.reset("signup:127.0.0.1")
+
+
+def test_password_change_invalidates_other_sessions(app):
+    """A session minted before a password change is rejected afterwards."""
+    from app.models import User, db
+
+    user = User(username="pwc", display_name="pwc")
+    user.set_password("old-password-1")
+    db.session.add(user)
+    db.session.commit()
+
+    browser_a = app.test_client()
+    browser_b = app.test_client()
+    for browser in (browser_a, browser_b):
+        resp = browser.post(
+            "/login", data={"username": "pwc", "password": "old-password-1"}
+        )
+        assert resp.status_code == 302
+
+    # Browser A changes the password.
+    resp = browser_a.post(
+        "/account",
+        data={
+            "current_password": "old-password-1",
+            "new_password": "new-password-1",
+            "confirm_password": "new-password-1",
+        },
+        follow_redirects=True,
+    )
+    assert "Password changed." in resp.data.decode()
+
+    # Browser B's older session is torn down and redirected to login.
+    resp = browser_b.get("/")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+    # Browser A remains signed in (it was re-stamped).
+    assert browser_a.get("/").status_code == 200
+
+    # The old password no longer works; the new one does.
+    fresh = app.test_client()
+    resp = fresh.post(
+        "/login", data={"username": "pwc", "password": "old-password-1"}
+    )
+    assert "Invalid username or password" in resp.data.decode()
+    resp = fresh.post(
+        "/login", data={"username": "pwc", "password": "new-password-1"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+
+def test_rate_limiter_unit():
+    from app.ratelimit import SlidingWindowLimiter
+
+    limiter = SlidingWindowLimiter(limit=2, window_seconds=60)
+    assert limiter.check("k") is True
+    assert limiter.check("k") is True
+    assert limiter.check("k") is False  # over the limit
+    limiter.reset("k")
+    assert limiter.check("k") is True  # reset clears history
+    assert limiter.check("other") is True  # keys are independent
+
+
 def test_security_headers_and_html_no_store(client):
     resp = client.get("/login")
     assert resp.headers["X-Content-Type-Options"] == "nosniff"

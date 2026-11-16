@@ -75,6 +75,9 @@ class User(db.Model, UserMixin, TimestampMixin):
     is_admin = db.Column(db.Boolean, nullable=False, default=False, server_default=false())
     failed_login_count = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)
+    # Bumped on password change; sessions carrying an older value are
+    # rejected, so a stolen session cookie dies with the old password.
+    session_version = db.Column(db.Integer, nullable=False, default=0, server_default=text("0"))
 
     projects = db.relationship("Project", back_populates="user")
     tasks = db.relationship("Task", back_populates="user")
@@ -101,6 +104,15 @@ class User(db.Model, UserMixin, TimestampMixin):
         return bool(self.locked_until and self.locked_until > utcnow())
 
     def register_failure(self, max_attempts: int, lock_minutes: int) -> None:
+        """Record a failed login.
+
+        After ``max_attempts`` failures the account locks for
+        ``lock_minutes``. Deliberately NOT escalating per lockout: an
+        unbounded escalation would let an attacker lock a victim's account
+        for good with a steady drip of bad passwords. The per-IP rate
+        limiter on the login route is what blunts the drip attack; this
+        lock only slows online guessing of a single account.
+        """
         self.failed_login_count = (self.failed_login_count or 0) + 1
         if self.failed_login_count >= max_attempts:
             self.locked_until = utcnow() + dt.timedelta(minutes=lock_minutes)
@@ -109,6 +121,10 @@ class User(db.Model, UserMixin, TimestampMixin):
     def clear_failures(self) -> None:
         self.failed_login_count = 0
         self.locked_until = None
+
+    def bump_session_version(self) -> None:
+        """Invalidate every existing session for this user."""
+        self.session_version = (self.session_version or 0) + 1
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<User {self.username!r}>"

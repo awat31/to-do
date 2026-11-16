@@ -10,6 +10,21 @@ from flask_login import current_user
 from .models import DeletedBatch, Project, Task
 
 
+def user_projects():
+    """Base query for the current user's projects (ownership filter applied)."""
+    return Project.query.filter_by(user_id=current_user.id)
+
+
+def user_tasks():
+    """Base query for the current user's tasks (ownership filter applied)."""
+    return Task.query.filter_by(user_id=current_user.id)
+
+
+def user_batches():
+    """Base query for the current user's trash batches."""
+    return DeletedBatch.query.filter_by(user_id=current_user.id)
+
+
 def task_or_404(task_id: int) -> Task:
     return Task.query.filter_by(
         id=task_id, user_id=current_user.id
