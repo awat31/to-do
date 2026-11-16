@@ -458,7 +458,7 @@ def purge(batch_id: int):
     batch = batch_or_404(batch_id)
     db.session.delete(batch)
     db.session.commit()
-    flash("Deleted batch removed permanently.", "ok")
+    flash("Task deleted permanently", "ok")
     return redirect(url_for("tasks.trash"))
 
 

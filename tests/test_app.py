@@ -933,6 +933,23 @@ def test_empty_trash(logged_in):
     assert Task.query.filter_by(title="Throwaway").first() is None
 
 
+def test_purging_trash_shows_task_deleted_message(logged_in):
+    from app.models import DeletedBatch
+
+    task = _create_task(logged_in, title="Permanent delete")
+    logged_in.post(f"/tasks/{task.id}/delete")
+    batch = DeletedBatch.query.one()
+
+    response = logged_in.post(
+        f"/tasks/trash/{batch.id}/purge", follow_redirects=True
+    )
+    body = response.data.decode()
+
+    assert "Task deleted permanently" in body
+    assert "Deleted batch removed permanently" not in body
+    assert DeletedBatch.query.count() == 0
+
+
 def test_task_index_shows_top_level_tasks_and_sorts_by_due_date(logged_in):
     _create_task(logged_in, title="Due later", due="2026-03-20")
     _create_task(logged_in, title="Due earlier", due="2026-03-01")
