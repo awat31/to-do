@@ -41,7 +41,7 @@ _signup_limiter = SlidingWindowLimiter(limit=5, window_seconds=60 * 60)
 @user_logged_in.connect
 def _reset_login_limit(sender, user, **kwargs):
     """A successful login clears the IP's failure history."""
-    _login_limiter.reset(f"login:{request.remote_addr}")
+    _login_limiter.reset(f"login:{request.remote_addr or 'unknown'}")
 
 
 def _client_ip() -> str:
@@ -66,15 +66,12 @@ def _signup_allowed() -> bool:
     )
 
 
-def _session_is_current(user: User) -> bool:
-    """Reject sessions minted before the user's last password change."""
-    stored = session.get("_session_version")
-    if stored is None:
-        return True  # session predates the versioning scheme; treat as current
-    return stored == (user.session_version or 0)
-
-
 def _stamp_session(user: User) -> None:
+    """Record the user's session_version in the login session.
+
+    Enforcement lives in the ``reject_stale_sessions`` before-request hook
+    (``app/__init__.py``); this stamp is what it compares against.
+    """
     session["_session_version"] = user.session_version or 0
 
 
