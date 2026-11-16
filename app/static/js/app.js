@@ -55,9 +55,18 @@
     const status = document.querySelector(".project-reorder-status");
     let dragged = null;
     let previousOrder = [];
+    let savingOrder = false;
+    let saveAgain = false;
 
     const cards = () => Array.from(projectGrid.querySelectorAll(".project-card"));
     const saveOrder = () => {
+      if (savingOrder) {
+        saveAgain = true;
+        return;
+      }
+
+      savingOrder = true;
+      saveAgain = false;
       const projectIds = cards().map((card) => Number(card.dataset.projectId));
       fetch(projectGrid.dataset.reorderUrl, {
         method: "POST",
@@ -74,12 +83,18 @@
         })
         .then((data) => {
           if (!data.ok) throw new Error("Project order was not saved.");
-          if (status) status.textContent = "Project order saved.";
+          if (!saveAgain && status) status.textContent = "Project order saved.";
         })
         .catch((error) => {
-          previousOrder.forEach((card) => projectGrid.appendChild(card));
-          if (status) status.textContent = "Could not save project order. Please try again.";
+          if (!saveAgain) {
+            previousOrder.forEach((card) => projectGrid.appendChild(card));
+            if (status) status.textContent = "Could not save project order. Please try again.";
+          }
           console.error(error);
+        })
+        .finally(() => {
+          savingOrder = false;
+          if (saveAgain) saveOrder();
         });
     };
 

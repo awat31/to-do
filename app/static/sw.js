@@ -3,7 +3,7 @@
    because every page is authenticated and marked no-store. */
 "use strict";
 
-const CACHE = "todo-shell-v2";
+const CACHE = "todo-shell-v3";
 const PRECACHE = [
   "/static/offline.html",
   "/static/css/style.css",
