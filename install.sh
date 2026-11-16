@@ -1,15 +1,22 @@
 # Script to install the app to your Linux machine
-#
+
 cwd=$(pwd)
 user=$(id -un)
 group=$(id -gn)
+
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 
 if [ ! -f .env ];
 then
 	cp .env.example .env
 fi
 
-cat << EOF >> /etc/systemd/system/todo.service
+mkdir -p instance
+
+.venv/bin/flask --app wsgi db upgrade
+
+cat << EOF > /etc/systemd/system/todo.service
 [Unit]
 Description=To-Do task app (Flask + Gunicorn)
 After=network.target
@@ -32,7 +39,7 @@ RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=$cwd/to-do/instance
+ReadWritePaths=$cwd/instance
 
 [Install]
 WantedBy=multi-user.target
@@ -40,5 +47,13 @@ EOF
 
 sudo systemctl daemon-reload
 sudo systemctl start todo
+sudo systemctl enable todo
+status=$(systemctl status todo | grep Active | awk -F ' ' '{ print $2 }')
 
-echo "To Do status: $(systemctl status todo.service | grep Active | awk -F ':' '{ print $2 }')"
+echo "------------------------------------------------"
+echo "Install Complete"
+echo
+echo "Service Status: $status"
+echo
+echo "Initial Admin Credentials"
+head -2 instance/admin_password.txt
