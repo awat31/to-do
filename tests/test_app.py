@@ -900,7 +900,9 @@ def test_delete_moves_subtree_to_trash_and_restores_it(logged_in):
 
     resp = logged_in.post(f"/tasks/{parent_id}/delete", follow_redirects=True)
     body = resp.data.decode()
-    assert "Deleted" in body and "Undo" in body
+    assert '<div class="undo-bar">' in body and "Undo" in body
+    assert "You can undo this from Trash." not in body
+    assert '<div class="flashes">' not in body
     db.session.expire_all()
     assert db.session.get(Task, parent_id) is None
     assert db.session.get(Task, child_id) is None
@@ -965,6 +967,30 @@ def test_task_index_hides_subtasks_and_places_completed_roots_last(logged_in):
     page = logged_in.get("/tasks/").data.decode()
     assert "Hidden child" not in page
     assert page.index("Open root") < page.index("Done root")
+
+
+def test_task_index_can_move_task_to_trash(logged_in):
+    from app.models import DeletedBatch, Task
+
+    task = _create_task(logged_in, title="Task from list")
+    child = _create_task(logged_in, title="Child from list", parent=task.id)
+    task_id, child_id = task.id, child.id
+    page = logged_in.get("/tasks/?sort=project").data.decode()
+
+    assert f'action="/tasks/{task_id}/delete"' in page
+    assert 'aria-label="Move task to Trash"' in page
+    assert "Move this task and all of its sub-tasks to Trash?" in page
+
+    response = logged_in.post(
+        f"/tasks/{task_id}/delete",
+        data={"next": "/tasks/?sort=project"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/tasks/?sort=project"
+    assert db.session.get(Task, task_id) is None
+    assert db.session.get(Task, child_id) is None
+    assert DeletedBatch.query.one().summary == "Task from list + 1 sub-task(s)"
 
 
 def test_completing_task_from_tasks_page_returns_to_tasks_page(logged_in):

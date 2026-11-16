@@ -424,11 +424,6 @@ def delete(task_id: int):
     db.session.commit()
     session["last_deleted_batch"] = batch.id
     _trim_trash()
-    flash(
-        f"Deleted {len(ids)} task(s) including sub-tasks. "
-        "You can undo this from Trash.",
-        "ok",
-    )
     return redirect_back(request.form.get("next"), url_for("tasks.index"))
 
 
