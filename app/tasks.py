@@ -18,7 +18,7 @@ from sqlalchemy.orm import joinedload
 from wtforms.fields.choices import SelectChoice
 
 from . import periods
-from .access import batch_or_404, task_or_404
+from .access import batch_or_404, task_or_404, user_batches, user_projects, user_tasks
 from .forms import (
     DeleteForm,
     DueDateForm,
@@ -46,13 +46,12 @@ bp = Blueprint("tasks", __name__, url_prefix="/tasks")
 def _project_choices(form: TaskForm) -> None:
     form.project_id.choices = [SelectChoice("0", "— No project —")] + [
         SelectChoice(str(p.id), p.name)
-        for p in Project.query.filter_by(user_id=current_user.id)
-        .order_by(Project.name)
+        for p in user_projects().order_by(Project.name)
     ]
 
 
 def _parent_choices(form: TaskForm, task: Task | None = None) -> None:
-    q = Task.query.filter(Task.user_id == current_user.id)
+    q = user_tasks()
     if task is not None:
         excluded = {task.id, *task.descendant_ids()}
         q = q.filter(~Task.id.in_(excluded))
@@ -113,10 +112,20 @@ def _due_date_sort_key(task: Task) -> tuple:
 def _project_sort_key(task: Task) -> tuple:
     return (
         task.done,
+        # \uffff (the highest Unicode code point) sorts unassigned tasks
+        # after every named project.
         task.project.name.casefold() if task.project else "\uffff",
         task.position,
         task.id,
     )
+
+
+def move_subtree(task: Task, project_id: int | None) -> list[Task]:
+    """Point a task and its whole subtree at ``project_id``; returns the tasks."""
+    moved = task.descendant_objects()
+    for item in moved:
+        item.project_id = project_id
+    return moved
 
 
 def _spawn_recurrence(task: Task) -> Task | None:
@@ -193,9 +202,7 @@ def index():
         "tasks/index.html",
         roots=roots,
         delete_form=DeleteForm(),
-        projects=Project.query.filter_by(user_id=current_user.id)
-        .order_by(Project.name)
-        .all(),
+        projects=user_projects().order_by(Project.name).all(),
         q=q,
         project_filter=project_id,
         status=status,
@@ -247,9 +254,7 @@ def detail(task_id: int):
         work_form=WorkDateForm(),
         due_form=DueDateForm(data={"due_date": task.due_date} if task.due_date else {}),
         subtask_form=QuickTaskForm(),
-        projects=Project.query.filter_by(user_id=current_user.id)
-        .order_by(Project.name)
-        .all(),
+        projects=user_projects().order_by(Project.name).all(),
     )
 
 
@@ -391,8 +396,7 @@ def _restore_batch(batch: DeletedBatch) -> int:
 
 def _trim_trash(keep: int = 20) -> None:
     batches = (
-        DeletedBatch.query
-        .filter_by(user_id=current_user.id)
+        user_batches()
         .order_by(DeletedBatch.created_at.desc())
         .all()
     )
@@ -431,8 +435,7 @@ def delete(task_id: int):
 @login_required
 def trash():
     batches = (
-        DeletedBatch.query
-        .filter_by(user_id=current_user.id)
+        user_batches()
         .order_by(DeletedBatch.created_at.desc())
         .all()
     )
@@ -465,7 +468,7 @@ def purge(batch_id: int):
 @bp.route("/trash/empty", methods=("POST",))
 @login_required
 def empty_trash():
-    DeletedBatch.query.filter_by(user_id=current_user.id).delete()
+    user_batches().delete()
     db.session.commit()
     session.pop("last_deleted_batch", None)
     flash("Trash emptied.", "ok")
@@ -576,11 +579,9 @@ def reassign_subtree(task_id: int):
     project = db.session.get(Project, project_id) if project_id else None
     if project_id and (project is None or project.user_id != current_user.id):
         abort(400)
-    tasks = task.descendant_objects()
-    for item in tasks:
-        item.project_id = project_id
+    count = len(move_subtree(task, project_id))
     db.session.commit()
-    flash(f"Moved {len(tasks)} task(s) to the selected project.", "ok")
+    flash(f"Moved {count} task(s) to the selected project.", "ok")
     return redirect(url_for("tasks.detail", task_id=task.id))
 
 
@@ -609,12 +610,16 @@ def reschedule_subtree(task_id: int):
 def search():
     """JSON task-name search for the typeahead on the project page."""
     q = (request.args.get("q") or "").strip()[:200]
-    query = Task.query.filter(
-        Task.user_id == current_user.id
-    ).options(joinedload(Task.project))
+    query = user_tasks().options(joinedload(Task.project))
     if q:
+        # ilike() only case-folds ASCII on SQLite; Python casefold() handles
+        # the full Unicode range, so the SQL ilike is a cheap prefilter and
+        # the exact comparison happens in Python.
         query = query.filter(Task.title.ilike(f"%{q}%"))
-    tasks = query.order_by(Task.title).limit(51).all()
+    # 51 = 50 results + one overflow probe to detect the "capped" flag.
+    tasks = query.order_by(Task.title, Task.id).limit(51).all()
+    if q:
+        tasks = [t for t in tasks if q.casefold() in t.title.casefold()]
     capped = len(tasks) > 50
     return {
         "results": [

@@ -12,7 +12,7 @@ from flask import (
     session,
     url_for,
 )
-from flask_login import current_user, login_required, login_user, logout_user
+from flask_login import current_user, login_required, login_user, logout_user, user_logged_in
 from sqlalchemy.exc import IntegrityError
 
 from .forms import (
@@ -24,9 +24,58 @@ from .forms import (
     SignupForm,
 )
 from .models import User, db, utcnow
+from .ratelimit import SlidingWindowLimiter
 from .utils import safe_next
 
 bp = Blueprint("auth", __name__)
+
+# Per-worker, per-IP throttles. Sizing: login allows a burst well above the
+# per-account lockout threshold (5) so a family/office sharing one NAT
+# address is not locked out, while still capping bulk credential stuffing;
+# signup is deliberately tight because account creation is rare and abuse
+# (spam accounts) is costly to undo.
+_login_limiter = SlidingWindowLimiter(limit=20, window_seconds=15 * 60)
+_signup_limiter = SlidingWindowLimiter(limit=5, window_seconds=60 * 60)
+
+
+@user_logged_in.connect
+def _reset_login_limit(sender, user, **kwargs):
+    """A successful login clears the IP's failure history."""
+    _login_limiter.reset(f"login:{request.remote_addr}")
+
+
+def _client_ip() -> str:
+    # Gunicorn's forwarded_allow_ips already restricts which proxies may set
+    # X-Forwarded-For, so remote_addr is the trusted client address.
+    return request.remote_addr or "unknown"
+
+
+def _login_allowed() -> bool:
+    return _login_limiter.check(
+        f"login:{_client_ip()}",
+        limit=current_app.config["LOGIN_IP_LIMIT"],
+        window=current_app.config["LOGIN_IP_WINDOW_MINUTES"] * 60,
+    )
+
+
+def _signup_allowed() -> bool:
+    return _signup_limiter.check(
+        f"signup:{_client_ip()}",
+        limit=current_app.config["SIGNUP_IP_LIMIT"],
+        window=current_app.config["SIGNUP_IP_WINDOW_HOURS"] * 3600,
+    )
+
+
+def _session_is_current(user: User) -> bool:
+    """Reject sessions minted before the user's last password change."""
+    stored = session.get("_session_version")
+    if stored is None:
+        return True  # session predates the versioning scheme; treat as current
+    return stored == (user.session_version or 0)
+
+
+def _stamp_session(user: User) -> None:
+    session["_session_version"] = user.session_version or 0
 
 
 def _find_user(username: str) -> User | None:
@@ -41,6 +90,8 @@ def signup():
 
     form = SignupForm()
     if form.validate_on_submit():
+        if not _signup_allowed():
+            return render_template("auth/signup.html", form=form), 429
         username = form.username.data
         if _find_user(username) is not None:
             form.username.errors.append("That username is already taken.")
@@ -56,6 +107,7 @@ def signup():
                 form.username.errors.append("That username is already taken.")
             else:
                 login_user(user)
+                _stamp_session(user)
                 flash(f"Welcome, {user.username}.", "ok")
                 return redirect(url_for("main.dashboard"))
     return render_template("auth/signup.html", form=form)
@@ -67,6 +119,8 @@ def login():
         return redirect(url_for("main.dashboard"))
     form = LoginForm()
     if form.validate_on_submit():
+        if not _login_allowed():
+            return render_template("auth/login.html", form=form), 429
         user = _find_user(form.username.data)
         if user is not None and user.is_locked():
             remaining = (user.locked_until - utcnow()).total_seconds()
@@ -82,6 +136,7 @@ def login():
             user.clear_failures()
             db.session.commit()
             login_user(user, remember=bool(form.remember.data))
+            _stamp_session(user)
             session.permanent = bool(form.remember.data)
             nxt = safe_next(request.args.get("next"), url_for("main.dashboard"))
             return redirect(nxt)
@@ -116,9 +171,16 @@ def account():
         if not current_user.check_password(form.current_password.data):
             form.current_password.errors.append("Current password is incorrect.")
         else:
-            current_user.set_password(form.new_password.data)
-            current_user.clear_failures()
+            user = current_user._get_current_object()
+            user.set_password(form.new_password.data)
+            user.clear_failures()
+            # Invalidate every other session (stolen cookies die with the
+            # old password); this browser is re-stamped below.
+            user.bump_session_version()
             db.session.commit()
+            session.clear()
+            login_user(user)
+            _stamp_session(user)
             flash("Password changed.", "ok")
             return redirect(url_for("auth.account"))
     return render_template(

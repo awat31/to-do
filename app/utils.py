@@ -1,4 +1,5 @@
 """Small shared helpers: safe redirects, form errors, CSRF, dates."""
+import calendar
 import datetime as dt
 from urllib.parse import urlsplit
 
@@ -67,8 +68,6 @@ def flash_form_errors(form) -> None:
 
 def shift_month(d: dt.date, months: int) -> dt.date:
     """Move a date by whole months, clamping the day to the month end."""
-    import calendar
-
     month_index = d.month - 1 + months
     year = d.year + month_index // 12
     month = month_index % 12 + 1

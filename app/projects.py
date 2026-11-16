@@ -13,7 +13,8 @@ from flask_login import current_user, login_required
 from sqlalchemy import func
 from wtforms.fields.choices import SelectChoice
 
-from .access import project_or_404, task_or_404
+from .access import project_or_404, task_or_404, user_projects
+from .tasks import move_subtree
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
@@ -27,8 +28,7 @@ bp = Blueprint("projects", __name__, url_prefix="/projects")
 @login_required
 def index():
     projects = (
-        Project.query
-        .filter_by(user_id=current_user.id)
+        user_projects()
         .order_by(Project.position, Project.name, Project.id)
         .all()
     )
@@ -85,7 +85,7 @@ def reorder():
     ):
         return {"ok": False, "error": "Invalid project order."}, 400
 
-    projects = Project.query.filter_by(user_id=current_user.id).all()
+    projects = user_projects().all()
     by_id = {project.id: project for project in projects}
     if len(project_ids) != len(set(project_ids)) or set(project_ids) != set(by_id):
         return {"ok": False, "error": "Invalid project order."}, 400
@@ -166,9 +166,7 @@ def add_task(project_id: int):
         if task.project_id == project.id and task.parent_id is None:
             flash(f"{task.title!r} is already in this project.", "error")
         else:
-            moved = task.descendant_objects()
-            for item in moved:
-                item.project_id = project.id
+            moved = move_subtree(task, project.id)
             # A picked sub-task is promoted to a project root, otherwise it
             # would remain hidden under a parent in another project.
             if task.parent_id is not None:
