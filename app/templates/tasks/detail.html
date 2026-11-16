@@ -49,6 +49,14 @@
   </div>
 
   <aside class="detail-side">
+    {% if task.project %}
+    <section class="section side-card">
+      <h2>Project</h2>
+      <a class="chip chip-lg" style="--chip: {{ color_hex(task.project.color) }}"
+         href="{{ url_for('projects.detail', project_id=task.project.id) }}">{{ task.project.name }}</a>
+    </section>
+    {% endif %}
+
     <section class="section side-card">
       <h2>Due date</h2>
       <form method="post" action="{{ url_for('tasks.set_due', task_id=task.id) }}" class="stack">
@@ -98,7 +106,7 @@
         <form method="post" action="{{ url_for('tasks.complete_subtree', task_id=task.id) }}"
               data-confirm="Mark this task and every sub-task as done?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-soft btn-sm" type="submit">Mark whole subtree done</button>
+          <button class="btn btn-soft btn-sm" type="submit">Mark whole subtree complete</button>
         </form>
         <form method="post" action="{{ url_for('tasks.reassign_subtree', task_id=task.id) }}" class="field-row">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -108,23 +116,16 @@
               <option value="{{ project.id }}" {{ 'selected' if task.project_id == project.id }}>{{ project.name }}</option>
             {% endfor %}
           </select>
-          <button class="btn btn-soft btn-sm" type="submit">Move subtree</button>
+          <button class="btn btn-soft btn-sm" type="submit">Change project</button>
         </form>
         <form method="post" action="{{ url_for('tasks.reschedule_subtree', task_id=task.id) }}" class="field-row">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="date" name="due_date" class="input input-date" value="{{ task.due_date.isoformat() if task.due_date else '' }}">
-          <button class="btn btn-soft btn-sm" type="submit">Set due for subtree</button>
+          <button class="btn btn-soft btn-sm" type="submit">Set due date</button>
         </form>
       </div>
     </section>
 
-    {% if task.project %}
-    <section class="section side-card">
-      <h2>Project</h2>
-      <a class="chip chip-lg" style="--chip: {{ color_hex(task.project.color) }}"
-         href="{{ url_for('projects.detail', project_id=task.project.id) }}">{{ task.project.name }}</a>
-    </section>
-    {% endif %}
   </aside>
 </div>
 {% endblock %}

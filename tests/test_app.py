@@ -295,6 +295,22 @@ def test_project_edit_page_renders_and_saves(logged_in):
     assert project.color == "blue"
 
 
+def test_task_detail_shows_project_before_due_date_and_labels_subtree_action(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Project before due", "color": "pink"})
+    project = Project.query.filter_by(name="Project before due").one()
+    task = _create_task(logged_in, title="Task with project", project=project.id)
+
+    page = logged_in.get(f"/tasks/{task.id}").data.decode()
+
+    assert page.index("<h2>Project</h2>") < page.index("<h2>Due date</h2>")
+    assert "Change project" in page
+    assert "Set due date" in page
+    assert "Mark whole subtree complete" in page
+    assert "Move subtree" not in page
+
+
 def test_quick_add_work_date(logged_in):
     import datetime as dt
     task = _create_task(logged_in, title="Quick add")
