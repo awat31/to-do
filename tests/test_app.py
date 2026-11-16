@@ -903,6 +903,8 @@ def test_delete_moves_subtree_to_trash_and_restores_it(logged_in):
     assert '<div class="undo-bar">' in body and "Undo" in body
     assert "You can undo this from Trash." not in body
     assert '<div class="flashes">' not in body
+    refreshed = logged_in.get("/tasks/").data.decode()
+    assert '<div class="undo-bar">' not in refreshed
     db.session.expire_all()
     assert db.session.get(Task, parent_id) is None
     assert db.session.get(Task, child_id) is None

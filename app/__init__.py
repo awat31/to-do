@@ -219,10 +219,8 @@ def create_app(config_class=None) -> Flask:
         highlight_color, highlight_text = _appearance_colors(
             user.highlight_color if user else None
         )
-        batch_id = session.get("last_deleted_batch")
+        batch_id = session.pop("last_deleted_batch", None)
         last_batch = db.session.get(DeletedBatch, batch_id) if batch_id else None
-        if batch_id and last_batch is None:
-            session.pop("last_deleted_batch", None)
         return {
             "last_deleted_batch": last_batch,
             "PROJECT_COLORS": PROJECT_COLORS,
