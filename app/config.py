@@ -12,18 +12,28 @@ load_dotenv(find_dotenv(usecwd=True), override=False)
 
 
 def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "")
-    try:
-        return int(raw)
-    except ValueError:
+    raw = os.environ.get(name)
+    if raw is None:
         return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer.") from exc
+    if value <= 0:
+        raise RuntimeError(f"{name} must be a positive integer.")
+    return value
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
         return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off", ""}:
+        return False
+    raise RuntimeError(f"{name} must be a boolean value.")
 
 
 class Config:
@@ -87,4 +97,10 @@ _CONFIGS = {
 
 
 def get_config_class():
-    return _CONFIGS.get(os.environ.get("FLASK_CONFIG", "production"), ProductionConfig)
+    name = os.environ.get("FLASK_CONFIG", "production")
+    try:
+        return _CONFIGS[name]
+    except KeyError as exc:
+        raise RuntimeError(
+            f"FLASK_CONFIG must be one of: {', '.join(_CONFIGS)}."
+        ) from exc

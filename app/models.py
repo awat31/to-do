@@ -235,7 +235,7 @@ class Task(db.Model, TimestampMixin):
             text(
                 "WITH RECURSIVE sub(id) AS ("
                 "  SELECT :id"
-                "  UNION ALL"
+                "  UNION"
                 "  SELECT t.id FROM task t JOIN sub s ON t.parent_id = s.id"
                 ") SELECT id FROM sub WHERE id != :id"
             ),

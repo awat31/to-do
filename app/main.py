@@ -60,14 +60,14 @@ def dashboard():
 
     overdue = Task.query.filter(
         Task.user_id == current_user.id,
-        Task.done == False,
-        Task.due_date != None,
+        Task.done.is_(False),
+        Task.due_date.is_not(None),
         Task.due_date < t,
     ).count()
     unscheduled = Task.query.filter(
         Task.user_id == current_user.id,
-        Task.done == False,
-        Task.due_date == None,
+        Task.done.is_(False),
+        Task.due_date.is_(None),
         ~Task.id.in_(db.session.query(TaskDate.task_id)),
     ).count()
 

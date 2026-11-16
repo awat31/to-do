@@ -475,6 +475,82 @@ def test_task_search(logged_in):
     assert miss == []
 
 
+def test_task_search_reports_when_results_are_capped(logged_in):
+    import json
+
+    from app.models import Task, User
+
+    user_id = User.query.filter_by(username="admin").one().id
+    db.session.add_all(
+        [Task(user_id=user_id, title=f"Search cap {i:02}") for i in range(51)]
+    )
+    db.session.commit()
+
+    response = json.loads(logged_in.get("/tasks/search").data)
+    assert len(response["results"]) == 50
+    assert response["capped"] is True
+
+
+def test_reassign_rejects_malformed_project_id(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Assigned", "color": "blue"})
+    project = Project.query.filter_by(name="Assigned").one()
+    task = _create_task(logged_in, title="Keep assigned", project=project.id)
+
+    response = logged_in.post(
+        f"/tasks/{task.id}/reassign",
+        data={"project_id": "not-an-id"},
+    )
+    assert response.status_code == 400
+    db.session.refresh(task)
+    assert task.project_id == project.id
+
+
+def test_clearing_due_date_disables_recurrence(logged_in):
+    task = _create_task(logged_in, title="Repeating task", due="2026-03-10")
+    task.recurrence = "weekly"
+    db.session.commit()
+
+    response = logged_in.post(f"/tasks/{task.id}/due", data={"due_date": ""})
+    assert response.status_code == 302
+    db.session.refresh(task)
+    assert task.due_date is None
+    assert task.recurrence == "none"
+
+
+def test_clearing_subtree_due_dates_disables_recurrence(logged_in):
+    parent = _create_task(logged_in, title="Repeating parent", due="2026-03-10")
+    child = _create_task(
+        logged_in, title="Repeating child", due="2026-03-11", parent=parent.id
+    )
+    parent.recurrence = "weekly"
+    child.recurrence = "monthly"
+    db.session.commit()
+
+    response = logged_in.post(
+        f"/tasks/{parent.id}/reschedule", data={"due_date": ""}
+    )
+    assert response.status_code == 302
+    db.session.refresh(parent)
+    db.session.refresh(child)
+    assert parent.due_date is None and parent.recurrence == "none"
+    assert child.due_date is None and child.recurrence == "none"
+
+
+def test_descendant_query_terminates_on_corrupt_cycle(logged_in):
+    from app.models import Task
+
+    first = _create_task(logged_in, title="Cycle first")
+    second = _create_task(logged_in, title="Cycle second", parent=first.id)
+    first.parent_id = second.id
+    db.session.commit()
+
+    assert first.descendant_ids() == [second.id]
+    assert second.descendant_ids() == [first.id]
+    assert logged_in.post(f"/tasks/{first.id}/delete").status_code == 302
+
+
 def test_project_add_task_assigns_existing(logged_in):
     """Picking a task from the typeahead moves it into the project."""
     from app.models import Project, Task
@@ -550,13 +626,35 @@ def test_healthz(client):
     assert resp.status_code == 200
 
 
-def test_production_allows_plain_http_sessions():
+def test_production_allows_plain_http_sessions(monkeypatch, tmp_path):
     """Regression: secure cookies would break CSRF over plain http://."""
-    os.environ.pop("TODO_SECURE_COOKIES", None)
-    os.environ["TODO_ADMIN_PASSWORD"] = "test-password"  # keep _ensure_admin deterministic
-    from app.config import ProductionConfig
-    app = create_app(ProductionConfig)
+    monkeypatch.delenv("TODO_SECURE_COOKIES", raising=False)
+    from app.config import ProductionConfig, _env_bool
+
+    class IsolatedProductionConfig(ProductionConfig):
+        SECRET_KEY = "test-production-config-key"
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'production-config.db'}"
+        SESSION_COOKIE_SECURE = _env_bool("TODO_SECURE_COOKIES")
+        REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
+
+    app = create_app(IsolatedProductionConfig)
     assert app.config["SESSION_COOKIE_SECURE"] is False
+
+
+def test_configuration_rejects_invalid_values(monkeypatch):
+    from app.config import _env_bool, _env_int, get_config_class
+
+    monkeypatch.setenv("TEST_POSITIVE_INT", "-2")
+    with pytest.raises(RuntimeError, match="positive integer"):
+        _env_int("TEST_POSITIVE_INT", 3)
+
+    monkeypatch.setenv("TEST_BOOLEAN", "maybe")
+    with pytest.raises(RuntimeError, match="boolean"):
+        _env_bool("TEST_BOOLEAN")
+
+    monkeypatch.setenv("FLASK_CONFIG", "typo")
+    with pytest.raises(RuntimeError, match="FLASK_CONFIG"):
+        get_config_class()
 
 
 def test_session_cookie_not_secure_over_http(client):
@@ -577,16 +675,20 @@ def test_gunicorn_optional_tls_certificate_pair(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("TODO_SSL_CERTFILE", raising=False)
     monkeypatch.delenv("TODO_SSL_KEYFILE", raising=False)
+    monkeypatch.delenv("FORWARDED_ALLOW_IPS", raising=False)
 
     http_config = run_path(str(config_path))
     assert http_config["certfile"] is None
     assert http_config["keyfile"] is None
+    assert http_config["forwarded_allow_ips"] == "127.0.0.1,::1"
 
     monkeypatch.setenv("TODO_SSL_CERTFILE", "/certs/fullchain.pem")
     monkeypatch.setenv("TODO_SSL_KEYFILE", "/certs/private-key.pem")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "127.0.0.1,10.0.0.4")
     https_config = run_path(str(config_path))
     assert https_config["certfile"] == "/certs/fullchain.pem"
     assert https_config["keyfile"] == "/certs/private-key.pem"
+    assert https_config["forwarded_allow_ips"] == "127.0.0.1,10.0.0.4"
 
     monkeypatch.delenv("TODO_SSL_KEYFILE")
     with pytest.raises(RuntimeError, match="Set both TODO_SSL_CERTFILE"):
@@ -1210,6 +1312,56 @@ def test_timezone_setting_drives_today(app):
     expected = dt.datetime.now(ZoneInfo("Pacific/Kiritimati")).date()
     assert periods.today() == expected
     app.config["TIMEZONE"] = "UTC"
+
+
+def test_create_app_rejects_invalid_timezone():
+    class InvalidTimezoneConfig:
+        TIMEZONE = "Not/A_Real_Zone"
+
+    with pytest.raises(RuntimeError, match="TIMEZONE"):
+        create_app(InvalidTimezoneConfig)
+
+
+def test_instance_secret_key_is_persistent_and_private(tmp_path):
+    import stat
+
+    from flask import Flask
+    from app import _instance_secret_key
+
+    first_app = Flask("first", instance_path=str(tmp_path))
+    first_key = _instance_secret_key(first_app)
+    second_app = Flask("second", instance_path=str(tmp_path))
+
+    assert _instance_secret_key(second_app) == first_key
+    assert stat.S_IMODE((tmp_path / "secret_key").stat().st_mode) == 0o600
+
+
+def test_instance_directory_is_private(tmp_path):
+    import stat
+
+    from flask import Flask
+    from app import _secure_instance_dir
+
+    instance_dir = tmp_path / "instance"
+    instance_dir.mkdir(mode=0o755)
+    os.chmod(instance_dir, 0o755)
+    app = Flask("instance", instance_path=str(instance_dir))
+
+    assert _secure_instance_dir(app) == instance_dir
+    assert stat.S_IMODE(instance_dir.stat().st_mode) == 0o700
+
+
+def test_asset_version_tracks_content_changes(tmp_path):
+    from flask import Flask
+    from app import _asset_version
+
+    app = Flask("assets", static_folder=str(tmp_path))
+    asset = tmp_path / "app.js"
+    asset.write_text("first version")
+    first_version = _asset_version(app)
+    asset.write_text("second version")
+
+    assert _asset_version(app) != first_version
 
 
 # --- multi-user accounts and isolation ----------------------------------

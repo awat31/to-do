@@ -16,7 +16,7 @@ if bool(certfile) != bool(keyfile):
     raise RuntimeError("Set both TODO_SSL_CERTFILE and TODO_SSL_KEYFILE to enable HTTPS.")
 accesslog = "-"
 errorlog = "-"
-access_log_format = '%({x-forwarded-for}i)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s %(M)sms'
-forwarded_allow_ips = "*"
+access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s %(M)sms'
+forwarded_allow_ips = os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1,::1")
 max_requests = 1000  # recycle workers periodically
 max_requests_jitter = 100

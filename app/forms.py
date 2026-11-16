@@ -9,6 +9,7 @@ from wtforms import (
     StringField,
     TextAreaField,
 )
+from wtforms.fields.choices import SelectChoice
 from wtforms.validators import DataRequired, EqualTo, Length, Optional, Regexp
 
 
@@ -16,10 +17,10 @@ def _strip(value):
     return value.strip() if isinstance(value, str) else value
 
 RECURRENCE_CHOICES = (
-    ("none", "Does not repeat"),
-    ("daily", "Every day"),
-    ("weekly", "Every week"),
-    ("monthly", "Every month"),
+    SelectChoice("none", "Does not repeat"),
+    SelectChoice("daily", "Every day"),
+    SelectChoice("weekly", "Every week"),
+    SelectChoice("monthly", "Every month"),
 )
 
 

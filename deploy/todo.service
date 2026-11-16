@@ -9,8 +9,10 @@ Group=awatkins
 WorkingDirectory=/home/awatkins/Applications/to-do
 Environment=FLASK_CONFIG=production
 Environment=PYTHONUNBUFFERED=1
+UMask=0077
+ExecStartPre=/usr/bin/install -d -m 700 /home/awatkins/Applications/to-do/instance
 ExecStartPre=/home/awatkins/Applications/to-do/.venv/bin/flask --app wsgi db upgrade
-ExecStart=/home/awatkins/Applications/to-do/.venv/bin/gunicorn -c /root/to-do/gunicorn.conf.py wsgi:app
+ExecStart=/home/awatkins/Applications/to-do/.venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
 Restart=always
 RestartSec=3
 

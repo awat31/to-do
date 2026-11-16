@@ -54,7 +54,7 @@
 </div>
 {% endmacro %}
 
-{% macro task_tree(tasks, next_url=None, depth=0) %}
+{% macro task_tree(tasks, next_url=None) %}
 <ul class="task-tree">
   {% for task in tasks recursive %}
   <li>
