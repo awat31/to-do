@@ -179,18 +179,7 @@
   {% if (due_sel or work_sel) and not any_due and not any_work %}
     <p class="empty big">No tasks with due or work-on dates in {{ p.label }}.</p>
   {% endif %}
-  {% if due_sel and any_due %}
-  <section class="section">
-    <h2><span class="dot dot-due"></span>Due in {{ p.label }} <span class="count">{{ due_count }}</span></h2>
-    {% for key, days in due_break %}
-      <h3 class="subhead">{{ key[0] | month_name if kind == 'year' else days[0][0] | human_date }}</h3>
-      {% for date, tasks in days %}
-        {% if kind == 'year' %}<div class="date-label">{{ date | human_date }}</div>{% endif %}
-        {% for task in tasks %}{{ task_card(task, next_url=next_url, default_date=date) }}{% endfor %}
-      {% endfor %}
-    {% endfor %}
-  </section>
-  {% endif %}
+  <div class="today-columns">
   {% if work_sel and any_work %}
   <section class="section">
     <h2><span class="dot dot-work"></span>Working on in {{ p.label }} <span class="count">{{ work_count }}</span></h2>
@@ -203,6 +192,19 @@
     {% endfor %}
   </section>
   {% endif %}
+  {% if due_sel and any_due %}
+  <section class="section">
+    <h2><span class="dot dot-due"></span>Due in {{ p.label }} <span class="count">{{ due_count }}</span></h2>
+    {% for key, days in due_break %}
+      <h3 class="subhead">{{ key[0] | month_name if kind == 'year' else days[0][0] | human_date }}</h3>
+      {% for date, tasks in days %}
+        {% if kind == 'year' %}<div class="date-label">{{ date | human_date }}</div>{% endif %}
+        {% for task in tasks %}{{ task_card(task, next_url=next_url, default_date=date) }}{% endfor %}
+      {% endfor %}
+    {% endfor %}
+  </section>
+  {% endif %}
+  </div>
 {% endif %}
 {% endif %}
 {% endblock %}
