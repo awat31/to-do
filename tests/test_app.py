@@ -424,7 +424,7 @@ def test_hide_completed_preference(logged_in):
     assert 'name="hide" value="1" checked' not in off
 
 
-def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
+def test_task_index_hides_done_parents_with_open_children(logged_in):
     parent = _create_task(logged_in, title="Done container")
     parent.done = True
     _create_task(logged_in, title="Still open child", parent=parent.id)
@@ -435,8 +435,8 @@ def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
 
     logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/"})
     page = logged_in.get("/tasks/").data.decode()
-    assert "Still open child" in page          # child survives
-    assert "Done container" in page            # kept as its container
+    assert "Still open child" not in page
+    assert "Done container" not in page
     from app.queries import filter_task_tree
     roots = Task.query.filter_by(parent_id=None).all()
     filtered = filter_task_tree(roots, True)
@@ -827,7 +827,7 @@ def test_empty_trash(logged_in):
     assert Task.query.filter_by(title="Throwaway").first() is None
 
 
-def test_task_index_sorts_all_tree_levels_by_due_date(logged_in):
+def test_task_index_shows_top_level_tasks_and_sorts_by_due_date(logged_in):
     _create_task(logged_in, title="Due later", due="2026-03-20")
     _create_task(logged_in, title="Due earlier", due="2026-03-01")
     _create_task(logged_in, title="No due date")
@@ -838,7 +838,8 @@ def test_task_index_sorts_all_tree_levels_by_due_date(logged_in):
     page = logged_in.get("/tasks/?sort=due").data.decode()
     assert page.index("Due earlier") < page.index("Due later")
     assert page.index("Due later") < page.index("No due date")
-    assert page.index("Child due earlier") < page.index("Child due later")
+    assert "Child due earlier" not in page
+    assert "Child due later" not in page
     assert 'name="sort"' in page
     assert '<option value="due" selected>' in page
 
@@ -850,6 +851,138 @@ def test_task_index_sorts_all_tree_levels_by_due_date(logged_in):
     assert 'name="q" value="Due later"' in filtered
     assert '<option value="open" selected>' in filtered
     assert '<option value="due" selected>' in filtered
+
+
+def test_task_index_hides_subtasks_and_places_completed_roots_last(logged_in):
+    parent = _create_task(logged_in, title="Open root")
+    _create_task(logged_in, title="Hidden child", parent=parent.id)
+    completed = _create_task(logged_in, title="Done root")
+    completed.done = True
+    db.session.commit()
+
+    page = logged_in.get("/tasks/").data.decode()
+    assert "Hidden child" not in page
+    assert page.index("Open root") < page.index("Done root")
+
+
+def test_task_index_can_sort_by_project(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Zulu project", "color": "blue"})
+    zulu = Project.query.filter_by(name="Zulu project").one()
+    logged_in.post("/projects/new", data={"name": "Alpha project", "color": "blue"})
+    alpha = Project.query.filter_by(name="Alpha project").one()
+    _create_task(logged_in, title="Zulu task", project=zulu.id)
+    _create_task(logged_in, title="Alpha task", project=alpha.id)
+    _create_task(logged_in, title="Unassigned task")
+
+    page = logged_in.get("/tasks/?sort=project").data.decode()
+    assert page.index("Alpha task") < page.index("Zulu task")
+    assert page.index("Zulu task") < page.index("Unassigned task")
+    assert '<option value="project" selected>' in page
+
+
+def test_bulk_update_changes_selected_task_dates_and_project(logged_in):
+    import datetime as dt
+
+    from app.models import Project, TaskDate
+
+    logged_in.post("/projects/new", data={"name": "Bulk project", "color": "blue"})
+    project = Project.query.filter_by(name="Bulk project").one()
+    first = _create_task(logged_in, title="Bulk first")
+    second = _create_task(logged_in, title="Bulk second")
+
+    response = logged_in.post(
+        "/tasks/bulk-update",
+        data={
+            "task_ids": [str(first.id), str(second.id)],
+            "apply_work_date": "1",
+            "work_date": "2026-07-14",
+            "apply_due_date": "1",
+            "due_date": "2026-07-20",
+            "apply_project": "1",
+            "project_id": str(project.id),
+        },
+    )
+    assert response.status_code == 302
+    for task in (first, second):
+        db.session.refresh(task)
+        assert task.due_date == dt.date(2026, 7, 20)
+        assert task.project_id == project.id
+        assert [date.date for date in task.work_dates] == [dt.date(2026, 7, 14)]
+
+    logged_in.post(
+        "/tasks/bulk-update",
+        data={
+            "task_ids": [str(first.id), str(second.id)],
+            "apply_work_date": "1",
+            "work_date": "2026-07-14",
+        },
+    )
+    assert TaskDate.query.filter_by(date=dt.date(2026, 7, 14)).count() == 2
+
+
+def test_bulk_update_rejects_an_unowned_task(logged_in):
+    from app.models import Task, User
+
+    other = User(username="other", display_name="Other")
+    other.set_password("other-password")
+    db.session.add(other)
+    db.session.flush()
+    task = Task(user_id=other.id, title="Private task")
+    db.session.add(task)
+    db.session.commit()
+
+    response = logged_in.post(
+        "/tasks/bulk-update",
+        data={
+            "task_ids": [str(task.id)],
+            "apply_due_date": "1",
+            "due_date": "2026-07-20",
+        },
+    )
+    assert response.status_code == 404
+
+
+def test_project_order_can_be_saved(logged_in):
+    from app.models import Project
+
+    for name in ("First", "Second", "Third"):
+        logged_in.post("/projects/new", data={"name": name, "color": "blue"})
+    projects = {
+        project.name: project.id for project in Project.query.all()
+    }
+
+    response = logged_in.post(
+        "/projects/reorder",
+        json={"project_ids": [projects["Third"], projects["First"], projects["Second"]]},
+    )
+    assert response.status_code == 200
+    assert [project.name for project in Project.query.order_by(Project.position)] == [
+        "Third", "First", "Second"
+    ]
+
+
+def test_subtask_add_returns_focus_to_add_field(logged_in):
+    parent = _create_task(logged_in, title="Parent for quick add")
+    response = logged_in.post(
+        f"/tasks/{parent.id}/subtasks",
+        data={"title": "Quick child"},
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("#add-subtask")
+
+
+def test_completing_subtask_returns_to_parent(logged_in):
+    from app.models import Task
+
+    parent = _create_task(logged_in, title="Parent staying open")
+    child = _create_task(logged_in, title="Child to complete", parent=parent.id)
+    response = logged_in.post(f"/tasks/{child.id}/toggle")
+    assert response.status_code == 302
+    assert response.headers["Location"] == f"/tasks/{parent.id}"
+    db.session.refresh(child)
+    assert child.done
 
 
 def test_task_index_keeps_default_order_when_due_sort_is_not_selected(logged_in):

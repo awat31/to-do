@@ -28,7 +28,7 @@ def index():
     projects = (
         Project.query
         .filter_by(user_id=current_user.id)
-        .order_by(Project.name)
+        .order_by(Project.position, Project.name, Project.id)
         .all()
     )
     counts = dict(
@@ -59,12 +59,40 @@ def create():
             user_id=current_user.id,
             name=form.name.data.strip(),
             color=form.color.data,
+            position=(
+                db.session.query(func.max(Project.position))
+                .filter_by(user_id=current_user.id)
+                .scalar()
+                or 0
+            ) + 1,
         )
         db.session.add(project)
         db.session.commit()
         flash(f"Project {project.name!r} created.", "ok")
         return redirect(url_for("projects.detail", project_id=project.id))
     return render_template("projects/form.html", form=form, project=None)
+
+
+@bp.route("/reorder", methods=("POST",))
+@login_required
+def reorder():
+    payload = request.get_json()
+    project_ids = payload.get("project_ids") if isinstance(payload, dict) else None
+    if not isinstance(project_ids, list) or not all(
+        isinstance(project_id, int) and not isinstance(project_id, bool)
+        for project_id in project_ids
+    ):
+        return {"ok": False, "error": "Invalid project order."}, 400
+
+    projects = Project.query.filter_by(user_id=current_user.id).all()
+    by_id = {project.id: project for project in projects}
+    if len(project_ids) != len(set(project_ids)) or set(project_ids) != set(by_id):
+        return {"ok": False, "error": "Invalid project order."}, 400
+
+    for position, project_id in enumerate(project_ids):
+        by_id[project_id].position = position
+    db.session.commit()
+    return {"ok": True}
 
 
 @bp.route("/<int:project_id>")

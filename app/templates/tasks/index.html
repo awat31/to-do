@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import task_tree with context %}
+{% from "_macros.html" import task_card with context %}
 {% from "_prefs.html" import hide_completed_toggle with context %}
 {% block title %}Tasks · To-Do{% endblock %}
 {% block content %}
@@ -11,7 +11,7 @@
   </div>
 </div>
 
-<form method="get" class="filter-bar">
+<form method="get" class="filter-bar js-task-filters">
   <input type="search" name="q" value="{{ q }}" class="input" placeholder="Search task names…" aria-label="Search task names">
   <select name="project" class="input" aria-label="Filter by project">
     <option value="">All projects</option>
@@ -27,13 +27,43 @@
   <select name="sort" class="input" aria-label="Order tasks">
     <option value="default" {{ 'selected' if sort_order == 'default' }}>Default order</option>
     <option value="due" {{ 'selected' if sort_order == 'due' }}>Due date (earliest first)</option>
+    <option value="project" {{ 'selected' if sort_order == 'project' }}>By project</option>
   </select>
-  <button class="btn btn-soft" type="submit">Filter</button>
   {% if filtered %}<a class="btn btn-ghost" href="{{ url_for('tasks.index') }}">Clear</a>{% endif %}
 </form>
 
+<form method="post" action="{{ url_for('tasks.bulk_update') }}" id="bulk-task-form" class="bulk-task-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ request.full_path }}">
+  <label class="bulk-field">
+    <input type="checkbox" name="apply_work_date" value="1">
+    <span>Add work date</span>
+    <input type="date" name="work_date" class="input input-date" aria-label="Work date to add">
+  </label>
+  <label class="bulk-field">
+    <input type="checkbox" name="apply_due_date" value="1">
+    <span>Due date</span>
+    <input type="date" name="due_date" class="input input-date" aria-label="Due date (blank clears it)">
+  </label>
+  <label class="bulk-field">
+    <input type="checkbox" name="apply_project" value="1">
+    <span>Project</span>
+    <select name="project_id" class="input" aria-label="Project to assign">
+      <option value="">— No project —</option>
+      {% for project in projects %}
+        <option value="{{ project.id }}">{{ project.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn btn-soft" type="submit">Update selected</button>
+</form>
+
 {% if roots %}
-  {{ task_tree(roots) }}
+  <ul class="task-tree task-list">
+    {% for task in roots %}
+      <li><div class="tree-row">{{ task_card(task, selectable=true) }}</div></li>
+    {% endfor %}
+  </ul>
 {% else %}
   <p class="empty big">
     {% if filtered %}No tasks match those filters.

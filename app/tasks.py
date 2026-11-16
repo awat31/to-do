@@ -27,7 +27,6 @@ from .forms import (
 )
 from .models import DeletedBatch, Project, Task, TaskDate, db, utcnow
 from .queries import (
-    build_forest,
     due_in,
     prepare_tasks,
     work_rows,
@@ -108,9 +107,18 @@ def _recurrence_date(d: dt.date, recurrence: str) -> dt.date | None:
 
 def _due_date_sort_key(task: Task) -> tuple:
     return (
+        task.done,
         task.due_date is None,
         task.due_date or dt.date.max,
+        task.position,
+        task.id,
+    )
+
+
+def _project_sort_key(task: Task) -> tuple:
+    return (
         task.done,
+        task.project.name.casefold() if task.project else "\uffff",
         task.position,
         task.id,
     )
@@ -150,14 +158,14 @@ def _spawn_recurrence(task: Task) -> Task | None:
 @bp.route("/")
 @login_required
 def index():
-    """All top-level tasks with their full sub-task trees, filterable."""
+    """Top-level tasks, filterable and sortable."""
     q = (request.args.get("q") or "").strip()[:200]
     project_id = request.args.get("project", type=int) or None
     status = request.args.get("status", "all")
     if status not in ("all", "open", "done"):
         status = "all"
     sort_order = request.args.get("sort", "default")
-    if sort_order not in ("default", "due"):
+    if sort_order not in ("default", "due", "project"):
         sort_order = "default"
     # "Done" is an explicit request: don't let the hide-completed preference
     # silently turn the result into an empty page.
@@ -175,12 +183,17 @@ def index():
         return status != "done" or task.done
 
     filtered = bool(q or project_id or status != "all")
-    roots = build_forest(
-        all_tasks,
-        hide_done=hide,
-        predicate=matches if filtered else None,
-        sort_key=_due_date_sort_key if sort_order == "due" else None,
-    )
+    roots = [
+        task for task in all_tasks
+        if task.parent_id is None
+        and (not hide or not task.done)
+        and (not filtered or matches(task))
+    ]
+    sort_key = {
+        "due": _due_date_sort_key,
+        "project": _project_sort_key,
+    }.get(sort_order, _due_date_sort_key)
+    roots.sort(key=sort_key)
     return render_template(
         "tasks/index.html",
         roots=roots,
@@ -272,9 +285,91 @@ def toggle(task_id: int):
     db.session.commit()
     if spawned is not None:
         flash(f"Next {task.recurrence} occurrence created for {spawned.due_date:%a %-d %b %Y}.", "ok")
-    return redirect_back(
-        request.form.get("next"), url_for("tasks.detail", task_id=task.id)
+    fallback = (
+        url_for("tasks.detail", task_id=task.parent_id)
+        if task.parent_id is not None
+        else url_for("tasks.detail", task_id=task.id)
     )
+    return redirect_back(
+        request.form.get("next"), fallback
+    )
+
+
+@bp.route("/bulk-update", methods=("POST",))
+@login_required
+def bulk_update():
+    raw_ids = request.form.getlist("task_ids")
+    try:
+        task_ids = list(dict.fromkeys(int(raw_id) for raw_id in raw_ids))
+    except (TypeError, ValueError):
+        abort(400)
+    if not task_ids or len(task_ids) > 100:
+        abort(400)
+
+    tasks = Task.query.filter(
+        Task.user_id == current_user.id,
+        Task.id.in_(task_ids),
+    ).all()
+    if len(tasks) != len(task_ids):
+        abort(404)
+
+    apply_work_date = request.form.get("apply_work_date") == "1"
+    apply_due_date = request.form.get("apply_due_date") == "1"
+    apply_project = request.form.get("apply_project") == "1"
+    if not any((apply_work_date, apply_due_date, apply_project)):
+        abort(400)
+
+    work_date = None
+    if apply_work_date:
+        raw_date = (request.form.get("work_date") or "").strip()
+        try:
+            work_date = periods.parse_day(raw_date)
+        except ValueError:
+            abort(400)
+
+    due_date = None
+    if apply_due_date:
+        raw_date = (request.form.get("due_date") or "").strip()
+        try:
+            due_date = periods.parse_day(raw_date) if raw_date else None
+        except ValueError:
+            abort(400)
+
+    project_id = None
+    if apply_project:
+        raw_project_id = (request.form.get("project_id") or "").strip()
+        try:
+            project_id = int(raw_project_id) if raw_project_id else None
+        except ValueError:
+            abort(400)
+        project = db.session.get(Project, project_id) if project_id else None
+        if project_id and (project is None or project.user_id != current_user.id):
+            abort(400)
+
+    existing_work_dates = set()
+    if apply_work_date:
+        existing_work_dates = set(
+            db.session.query(TaskDate.task_id)
+            .filter(
+                TaskDate.task_id.in_(task_ids),
+                TaskDate.date == work_date,
+            )
+            .all()
+        )
+        existing_work_dates = {row[0] for row in existing_work_dates}
+
+    for task in tasks:
+        if apply_work_date and task.id not in existing_work_dates:
+            db.session.add(TaskDate(task_id=task.id, date=work_date))
+        if apply_due_date:
+            task.due_date = due_date
+            if due_date is None:
+                task.recurrence = "none"
+        if apply_project:
+            task.project_id = project_id
+    db.session.commit()
+    flash(f"Updated {len(tasks)} task(s).", "ok")
+    return redirect_back(request.form.get("next"), url_for("tasks.index"))
 
 
 @bp.route("/<int:task_id>/notes", methods=("POST",))
@@ -482,7 +577,7 @@ def add_subtask(task_id: int):
         flash("Sub-task added.", "ok")
     else:
         flash_form_errors(form)
-    return redirect(url_for("tasks.detail", task_id=task.id))
+    return redirect(url_for("tasks.detail", task_id=task.id) + "#add-subtask")
 
 
 @bp.route("/<int:task_id>/due", methods=("POST",))

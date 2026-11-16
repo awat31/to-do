@@ -8,7 +8,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro task_card(task, next_url=None, show_dates=true, default_date=None) %}
+{% macro task_card(task, next_url=None, show_dates=true, default_date=None, selectable=false) %}
 <div class="task-card {{ 'is-done' if task.done }}">
   <form method="post" action="{{ url_for('tasks.toggle', task_id=task.id) }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -16,6 +16,10 @@
     <button class="check" type="submit" title="{{ 'Mark as not done' if task.done else 'Mark as done' }}"
       aria-pressed="{{ 'true' if task.done else 'false' }}">{{ '✓' if task.done else '' }}</button>
   </form>
+  {% if selectable %}
+    <input class="selection-check" type="checkbox" name="task_ids" value="{{ task.id }}"
+           form="bulk-task-form" aria-label="Select {{ task.title }}">
+  {% endif %}
   <div class="task-card-main">
     <a class="task-title" href="{{ url_for('tasks.detail', task_id=task.id) }}">{{ task.title }}</a>
     {% if task.ancestors() %}
