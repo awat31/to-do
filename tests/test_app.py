@@ -967,6 +967,22 @@ def test_task_index_hides_subtasks_and_places_completed_roots_last(logged_in):
     assert page.index("Open root") < page.index("Done root")
 
 
+def test_completing_task_from_tasks_page_returns_to_tasks_page(logged_in):
+    task = _create_task(logged_in, title="Complete from task list")
+    page = logged_in.get("/tasks/?sort=project").data.decode()
+
+    assert 'name="next" value="/tasks/?sort=project"' in page
+    response = logged_in.post(
+        f"/tasks/{task.id}/toggle",
+        data={"next": "/tasks/?sort=project"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/tasks/?sort=project"
+    db.session.refresh(task)
+    assert task.done
+
+
 def test_task_index_can_sort_by_project(logged_in):
     from app.models import Project
 
