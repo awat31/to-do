@@ -452,6 +452,12 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 /* ---- detail layout ---- */
 .detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 2rem; }
 @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }
+/* Dashboard & day-view: "Due today" / "Working on today" side by side. */
+.today-columns {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: start;
+}
+@media (max-width: 900px) { .today-columns { grid-template-columns: 1fr; } }
+
 /* Sub-tree actions: every control sits on one shared height so mixed
    buttons, selects and date inputs line up instead of wobbling. */
 .subtree-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
