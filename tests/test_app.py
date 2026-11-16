@@ -275,6 +275,26 @@ def test_project_notes_autosave(logged_in):
     assert Project.query.first().notes == "Budget ~500"
 
 
+def test_project_edit_page_renders_and_saves(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Renovation", "color": "pink"})
+    project = Project.query.filter_by(name="Renovation").one()
+
+    page = logged_in.get(f"/projects/{project.id}/edit")
+    assert page.status_code == 200
+    assert "Edit project" in page.data.decode()
+
+    response = logged_in.post(
+        f"/projects/{project.id}/edit",
+        data={"name": "Kitchen", "color": "blue"},
+    )
+    assert response.status_code == 302
+    db.session.refresh(project)
+    assert project.name == "Kitchen"
+    assert project.color == "blue"
+
+
 def test_quick_add_work_date(logged_in):
     import datetime as dt
     task = _create_task(logged_in, title="Quick add")
