@@ -324,6 +324,14 @@ def test_dashboard_card_prefills_today(logged_in):
     assert f'value="{dt.date.today().isoformat()}"' in page
 
 
+def test_dashboard_does_not_show_unscheduled_alert(logged_in):
+    _create_task(logged_in, title="Unscheduled task")
+
+    page = logged_in.get("/").data.decode()
+
+    assert "open, unscheduled" not in page
+
+
 def test_dashboard_work_count_matches_list(logged_in):
     """Regression: 'Working on today' counted tasks hidden as due-today dupes."""
     import datetime as dt
