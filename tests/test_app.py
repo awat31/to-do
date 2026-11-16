@@ -882,68 +882,6 @@ def test_task_index_can_sort_by_project(logged_in):
     assert '<option value="project" selected>' in page
 
 
-def test_bulk_update_changes_selected_task_dates_and_project(logged_in):
-    import datetime as dt
-
-    from app.models import Project, TaskDate
-
-    logged_in.post("/projects/new", data={"name": "Bulk project", "color": "blue"})
-    project = Project.query.filter_by(name="Bulk project").one()
-    first = _create_task(logged_in, title="Bulk first")
-    second = _create_task(logged_in, title="Bulk second")
-
-    response = logged_in.post(
-        "/tasks/bulk-update",
-        data={
-            "task_ids": [str(first.id), str(second.id)],
-            "apply_work_date": "1",
-            "work_date": "2026-07-14",
-            "apply_due_date": "1",
-            "due_date": "2026-07-20",
-            "apply_project": "1",
-            "project_id": str(project.id),
-        },
-    )
-    assert response.status_code == 302
-    for task in (first, second):
-        db.session.refresh(task)
-        assert task.due_date == dt.date(2026, 7, 20)
-        assert task.project_id == project.id
-        assert [date.date for date in task.work_dates] == [dt.date(2026, 7, 14)]
-
-    logged_in.post(
-        "/tasks/bulk-update",
-        data={
-            "task_ids": [str(first.id), str(second.id)],
-            "apply_work_date": "1",
-            "work_date": "2026-07-14",
-        },
-    )
-    assert TaskDate.query.filter_by(date=dt.date(2026, 7, 14)).count() == 2
-
-
-def test_bulk_update_rejects_an_unowned_task(logged_in):
-    from app.models import Task, User
-
-    other = User(username="other", display_name="Other")
-    other.set_password("other-password")
-    db.session.add(other)
-    db.session.flush()
-    task = Task(user_id=other.id, title="Private task")
-    db.session.add(task)
-    db.session.commit()
-
-    response = logged_in.post(
-        "/tasks/bulk-update",
-        data={
-            "task_ids": [str(task.id)],
-            "apply_due_date": "1",
-            "due_date": "2026-07-20",
-        },
-    )
-    assert response.status_code == 404
-
-
 def test_project_order_can_be_saved(logged_in):
     from app.models import Project
 
@@ -961,6 +899,14 @@ def test_project_order_can_be_saved(logged_in):
     assert [project.name for project in Project.query.order_by(Project.position)] == [
         "Third", "First", "Second"
     ]
+    page = logged_in.get("/projects/").data.decode()
+    assert [
+        page.index(f'href="/projects/{projects[name]}"')
+        for name in ("Third", "First", "Second")
+    ] == sorted(
+        page.index(f'href="/projects/{projects[name]}"')
+        for name in ("Third", "First", "Second")
+    )
 
 
 def test_subtask_add_returns_focus_to_add_field(logged_in):

@@ -32,36 +32,10 @@
   {% if filtered %}<a class="btn btn-ghost" href="{{ url_for('tasks.index') }}">Clear</a>{% endif %}
 </form>
 
-<form method="post" action="{{ url_for('tasks.bulk_update') }}" id="bulk-task-form" class="bulk-task-form">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="next" value="{{ request.full_path }}">
-  <label class="bulk-field">
-    <input type="checkbox" name="apply_work_date" value="1">
-    <span>Add work date</span>
-    <input type="date" name="work_date" class="input input-date" aria-label="Work date to add">
-  </label>
-  <label class="bulk-field">
-    <input type="checkbox" name="apply_due_date" value="1">
-    <span>Due date</span>
-    <input type="date" name="due_date" class="input input-date" aria-label="Due date (blank clears it)">
-  </label>
-  <label class="bulk-field">
-    <input type="checkbox" name="apply_project" value="1">
-    <span>Project</span>
-    <select name="project_id" class="input" aria-label="Project to assign">
-      <option value="">— No project —</option>
-      {% for project in projects %}
-        <option value="{{ project.id }}">{{ project.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <button class="btn btn-soft" type="submit">Update selected</button>
-</form>
-
 {% if roots %}
   <ul class="task-tree task-list">
     {% for task in roots %}
-      <li><div class="tree-row">{{ task_card(task, selectable=true) }}</div></li>
+      <li><div class="tree-row">{{ task_card(task) }}</div></li>
     {% endfor %}
   </ul>
 {% else %}

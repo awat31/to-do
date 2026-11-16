@@ -21,9 +21,8 @@ constraints.
   mini-calendars to their months. Month and week calendar days link to the day
   view.
 - **Task list tools** — filter by title, project, and status; order top-level
-  tasks by due date or project; bulk-adjust work dates, due dates, and project;
-  and show or hide completed tasks. Task details include controls to complete,
-  move, or reschedule a whole subtree.
+  tasks by due date or project; and show or hide completed tasks. Task details
+  include controls to complete, move, or reschedule a whole subtree.
 - **Trash and undo** — deleting a task snapshots its subtree. Restore from the
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
@@ -79,9 +78,8 @@ completed leaf tasks.
 On a task's detail page, **Sub-tree actions** can mark the task and all its
 sub-tasks done, move them to a project, or set their due date. The Tasks page
 shows top-level tasks only, puts completed tasks last, and filters by title,
-project, and open/done status as you type or change a filter. Select multiple
-tasks to add a work date, set or clear a due date, or assign a project. Drag
-project cards on the Projects page to reorder them.
+project, and open/done status as you type or change a filter. Drag project
+cards on the Projects page to reorder them.
 
 ### Projects
 
