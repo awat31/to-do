@@ -15,6 +15,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy.orm import joinedload
+from wtforms.fields.choices import SelectChoice
 
 from . import periods
 from .access import batch_or_404, task_or_404
@@ -43,8 +44,8 @@ bp = Blueprint("tasks", __name__, url_prefix="/tasks")
 
 
 def _project_choices(form: TaskForm) -> None:
-    form.project_id.choices = [(0, "— No project —")] + [
-        (p.id, p.name)
+    form.project_id.choices = [SelectChoice("0", "— No project —")] + [
+        SelectChoice(str(p.id), p.name)
         for p in Project.query.filter_by(user_id=current_user.id)
         .order_by(Project.name)
     ]
@@ -55,20 +56,14 @@ def _parent_choices(form: TaskForm, task: Task | None = None) -> None:
     if task is not None:
         excluded = {task.id, *task.descendant_ids()}
         q = q.filter(~Task.id.in_(excluded))
-    form.parent_id.choices = [(0, "— Top level —")] + [
-        (t.id, t.title) for t in q.order_by(Task.title).all()
+    form.parent_id.choices = [SelectChoice("0", "— Top level —")] + [
+        SelectChoice(str(t.id), t.title) for t in q.order_by(Task.title).all()
     ]
 
 
-def _parse_ids(form) -> tuple[int, int]:
-    try:
-        return int(form.project_id.data or 0), int(form.parent_id.data or 0)
-    except (TypeError, ValueError):
-        return 0, 0
-
-
 def _save_from_form(form: TaskForm, task: Task) -> bool:
-    project_id, parent_id = _parse_ids(form)
+    project_id = form.project_id.data or 0
+    parent_id = form.parent_id.data or 0
     project = db.session.get(Project, project_id) if project_id else None
     if project_id and (project is None or project.user_id != current_user.id):
         form.project_id.errors.append("Choose one of your own projects.")
@@ -216,7 +211,7 @@ def create():
     parent_id = request.args.get("parent", type=int)
     if parent_id:
         parent = task_or_404(parent_id)
-    preset_project = request.args.get("project")
+    preset_project = request.args.get("project", type=int)
 
     form = TaskForm()
     _project_choices(form)
@@ -225,11 +220,8 @@ def create():
     if request.method == "GET":
         if parent is not None:
             form.parent_id.data = parent.id
-        if preset_project:
-            try:
-                form.project_id.data = int(preset_project)
-            except ValueError:
-                pass
+        if preset_project is not None:
+            form.project_id.data = preset_project
 
     if form.validate_on_submit():
         task = Task(user_id=current_user.id)
@@ -317,11 +309,14 @@ def _snapshot_batch(task: Task) -> DeletedBatch:
     for t in tasks:
         depth = 0
         node = t
+        seen = {node.id}
         while node.parent_id in ids:
-            depth += 1
-            node = db.session.get(Task, node.parent_id)
-            if node is None:
+            parent = db.session.get(Task, node.parent_id)
+            if parent is None or parent.id in seen:
                 break
+            depth += 1
+            node = parent
+            seen.add(node.id)
         items.append(
             {
                 "id": t.id,
@@ -429,11 +424,6 @@ def delete(task_id: int):
     db.session.commit()
     session["last_deleted_batch"] = batch.id
     _trim_trash()
-    flash(
-        f"Deleted {len(ids)} task(s) including sub-tasks. "
-        "You can undo this from Trash.",
-        "ok",
-    )
     return redirect_back(request.form.get("next"), url_for("tasks.index"))
 
 
@@ -468,7 +458,7 @@ def purge(batch_id: int):
     batch = batch_or_404(batch_id)
     db.session.delete(batch)
     db.session.commit()
-    flash("Deleted batch removed permanently.", "ok")
+    flash("Task deleted permanently", "ok")
     return redirect(url_for("tasks.trash"))
 
 
@@ -510,6 +500,8 @@ def set_due(task_id: int):
     form = DueDateForm()
     if form.validate_on_submit():
         task.due_date = form.due_date.data
+        if task.due_date is None:
+            task.recurrence = "none"
         db.session.commit()
         flash("Due date updated.", "ok")
     else:
@@ -546,7 +538,9 @@ def add_work_dates(task_id: int):
 @login_required
 def remove_work_date(task_id: int, td_id: int):
     task = task_or_404(task_id)
-    td = TaskDate.query.get_or_404(td_id)
+    td = db.session.get(TaskDate, td_id)
+    if td is None:
+        abort(404)
     if td.task_id != task.id:
         abort(400)
     db.session.delete(td)
@@ -574,7 +568,11 @@ def complete_subtree(task_id: int):
 @login_required
 def reassign_subtree(task_id: int):
     task = task_or_404(task_id)
-    project_id = request.form.get("project_id", type=int) or None
+    raw_project_id = (request.form.get("project_id") or "").strip()
+    try:
+        project_id = int(raw_project_id) if raw_project_id else None
+    except ValueError:
+        abort(400)
     project = db.session.get(Project, project_id) if project_id else None
     if project_id and (project is None or project.user_id != current_user.id):
         abort(400)
@@ -599,6 +597,8 @@ def reschedule_subtree(task_id: int):
     tasks = task.descendant_objects()
     for item in tasks:
         item.due_date = due
+        if due is None:
+            item.recurrence = "none"
     db.session.commit()
     flash(f"Updated the due date for {len(tasks)} task(s).", "ok")
     return redirect(url_for("tasks.detail", task_id=task.id))
@@ -614,7 +614,8 @@ def search():
     ).options(joinedload(Task.project))
     if q:
         query = query.filter(Task.title.ilike(f"%{q}%"))
-    tasks = query.order_by(Task.title).limit(50).all()
+    tasks = query.order_by(Task.title).limit(51).all()
+    capped = len(tasks) > 50
     return {
         "results": [
             {
@@ -623,9 +624,9 @@ def search():
                 "project": t.project.name if t.project else None,
                 "done": t.done,
             }
-            for t in tasks
+            for t in tasks[:50]
         ],
-        "capped": query.count() > 50,
+        "capped": capped,
     }
 
 

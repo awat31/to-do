@@ -15,10 +15,9 @@
   </div>
 </div>
 
-{% if overdue or unscheduled %}
+{% if overdue %}
 <div class="stat-row">
   {% if overdue %}<a class="stat stat-alert" href="{{ url_for('tasks.scheduled') }}">{{ overdue }} overdue</a>{% endif %}
-  {% if unscheduled %}<a class="stat" href="{{ url_for('tasks.index') }}">{{ unscheduled }} open, unscheduled</a>{% endif %}
 </div>
 {% endif %}
 

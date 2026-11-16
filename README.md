@@ -54,7 +54,9 @@ On a new, migrated database, the app also creates an initial account named
 unless `TODO_ADMIN_PASSWORD` was set before startup. This account can manage
 users. Sign in and change its password from the account link in the top
 navigation; keep the password file private and delete it after noting the
-generated password.
+generated password. The app restricts its `instance/` directory to the
+service owner so the database, session key, and generated password remain
+private.
 
 ### Dashboard and tasks
 
@@ -205,7 +207,10 @@ proxy. Keep the private key readable only by the service account.
 
 For a reverse proxy that handles TLS, omit both Gunicorn certificate settings
 and bind Gunicorn to loopback, for example `BIND=127.0.0.1:8000`. Configure the
-proxy to forward requests to Gunicorn and enable secure cookies as above.
+proxy to forward requests to Gunicorn and enable secure cookies as above. If
+the proxy connects from a non-loopback address, set `FORWARDED_ALLOW_IPS` to
+that proxy's trusted IP address or addresses; do not use `*` on a public
+interface.
 
 ### Configuration
 
@@ -219,6 +224,7 @@ commonly used settings.
 | `WEB_CONCURRENCY` | Calculated from CPU count | Gunicorn worker count. |
 | `THREADS` | `2` | Threads per Gunicorn worker. |
 | `GUNICORN_TIMEOUT` | `60` | Worker timeout in seconds. |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1,::1` | Trusted proxy addresses allowed to set forwarded headers. |
 | `TODO_ADMIN_PASSWORD` | Generated | Initial `admin` password, used only when the database has no users. |
 | `TODO_DATABASE` | `instance/todo.sqlite3` | SQLAlchemy database URL. |
 | `SECRET_KEY` | Generated in `instance/secret_key` | Session and CSRF signing key. |
@@ -266,8 +272,6 @@ requirements), then run:
   the `instance/` directory, or use SQLite's online backup facility while it
   is running. SQLite uses foreign keys, WAL journaling, and a 5-second busy
   timeout.
-- `index.html` in the repository root is a separate, dependency-free
-  localStorage demo; it is not part of the deployed Flask service.
 
 ```text
 app/

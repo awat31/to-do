@@ -35,7 +35,7 @@
 {% if roots %}
   <ul class="task-tree task-list">
     {% for task in roots %}
-      <li><div class="tree-row">{{ task_card(task) }}</div></li>
+      <li><div class="tree-row">{{ task_card(task, next_url=request.full_path, show_delete=true) }}</div></li>
     {% endfor %}
   </ul>
 {% else %}

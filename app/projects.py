@@ -11,6 +11,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy import func
+from wtforms.fields.choices import SelectChoice
 
 from .access import project_or_404, task_or_404
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
@@ -46,7 +47,7 @@ def index():
 
 
 def _color_choices():
-    return [(name, name.capitalize()) for name in PROJECT_COLORS]
+    return [SelectChoice(name, name.capitalize()) for name in PROJECT_COLORS]
 
 
 @bp.route("/new", methods=("GET", "POST"))

@@ -45,6 +45,11 @@
     });
   });
 
+  const undoBar = document.querySelector(".undo-bar");
+  if (undoBar) {
+    window.setTimeout(() => undoBar.remove(), 5000);
+  }
+
   const subtaskInput = document.getElementById("add-subtask");
   if (subtaskInput && window.location.hash === "#add-subtask") {
     subtaskInput.focus();
