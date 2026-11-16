@@ -272,8 +272,6 @@ requirements), then run:
   the `instance/` directory, or use SQLite's online backup facility while it
   is running. SQLite uses foreign keys, WAL journaling, and a 5-second busy
   timeout.
-- `index.html` in the repository root is a separate, dependency-free
-  localStorage demo; it is not part of the deployed Flask service.
 
 ```text
 app/
