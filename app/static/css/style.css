@@ -291,6 +291,10 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 }
 .filter-bar .input { width: auto; }
 .filter-bar input[type="search"] { flex: 1; min-width: 180px; }
+.project-reorder-status { margin: -0.5rem 0 0.75rem; }
+.project-card[draggable="true"] { cursor: grab; }
+.project-card.is-dragging { opacity: 0.45; cursor: grabbing; }
+.project-card.is-drop-target { outline: 2px dashed var(--accent); outline-offset: 3px; }
 .chip-repeat {
   background: var(--repeat-soft);
   border-color: color-mix(in srgb, var(--repeat) 40%, var(--surface));

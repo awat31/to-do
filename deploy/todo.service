@@ -4,13 +4,13 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-Group=root
-WorkingDirectory=/root/to-do
+User=awatkins
+Group=awatkins
+WorkingDirectory=/home/awatkins/Applications/to-do
 Environment=FLASK_CONFIG=production
 Environment=PYTHONUNBUFFERED=1
-ExecStartPre=/root/to-do/.venv/bin/flask --app wsgi db upgrade
-ExecStart=/root/to-do/.venv/bin/gunicorn -c /root/to-do/gunicorn.conf.py wsgi:app
+ExecStartPre=/home/awatkins/Applications/to-do/.venv/bin/flask --app wsgi db upgrade
+ExecStart=/home/awatkins/Applications/to-do/.venv/bin/gunicorn -c /root/to-do/gunicorn.conf.py wsgi:app
 Restart=always
 RestartSec=3
 
@@ -18,7 +18,7 @@ RestartSec=3
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/root/to-do/instance
+ReadWritePaths=/home/awatkins/Applications/to-do/instance
 
 [Install]
 WantedBy=multi-user.target

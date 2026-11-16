@@ -128,6 +128,7 @@ class Project(db.Model, TimestampMixin):
     name = db.Column(db.String(120), nullable=False)
     color = db.Column(db.String(20), nullable=False, default="blue")
     notes = db.Column(db.Text, nullable=False, default="")
+    position = db.Column(db.Integer, nullable=False, default=0)
 
     user = db.relationship("User", back_populates="projects")
     tasks = db.relationship(

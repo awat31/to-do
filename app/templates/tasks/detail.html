@@ -42,7 +42,7 @@
       {% endif %}
       <form method="post" action="{{ url_for('tasks.add_subtask', task_id=task.id) }}" class="inline-add">
         {{ subtask_form.hidden_tag() }}
-        {{ subtask_form.title(class="input", placeholder="Add a sub-task…", autocomplete="off") }}
+        {{ subtask_form.title(id="add-subtask", class="input", placeholder="Add a sub-task…", autocomplete="off") }}
         <button class="btn btn-primary" type="submit">Add</button>
       </form>
     </section>

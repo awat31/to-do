@@ -8,9 +8,11 @@
   </div>
 </div>
 {% if projects %}
-<div class="project-grid">
+<p class="hint project-reorder-status" role="status">Drag projects to change their order.</p>
+<div class="project-grid" data-reorder-url="{{ url_for('projects.reorder') }}">
   {% for project in projects %}
-  <a class="project-card" style="--chip: {{ color_hex(project.color) }}" href="{{ url_for('projects.detail', project_id=project.id) }}">
+  <a class="project-card" draggable="true" data-project-id="{{ project.id }}"
+     style="--chip: {{ color_hex(project.color) }}" href="{{ url_for('projects.detail', project_id=project.id) }}">
     <span class="project-swatch"></span>
     <span class="project-name">{{ project.name }}</span>
     {% set count = counts.get(project.id, 0) %}

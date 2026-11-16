@@ -20,9 +20,9 @@ constraints.
   and year views have list and calendar layouts; year view links its twelve
   mini-calendars to their months. Month and week calendar days link to the day
   view.
-- **Task list tools** — filter by title, project, and status; order tasks by due
-  date; and show or hide completed tasks. Task details include controls to
-  complete, move, or reschedule a whole subtree.
+- **Task list tools** — filter by title, project, and status; order top-level
+  tasks by due date or project; and show or hide completed tasks. Task details
+  include controls to complete, move, or reschedule a whole subtree.
 - **Trash and undo** — deleting a task snapshots its subtree. Restore from the
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
@@ -76,13 +76,15 @@ Sub-tasks can be nested; on a parent task, the progress indicator summarizes
 completed leaf tasks.
 
 On a task's detail page, **Sub-tree actions** can mark the task and all its
-sub-tasks done, move them to a project, or set their due date. Drag task
-siblings by the handle in a task tree to change their order. The Tasks page
-can be filtered by title, project, or open/done status.
+sub-tasks done, move them to a project, or set their due date. The Tasks page
+shows top-level tasks only, puts completed tasks last, and filters by title,
+project, and open/done status as you type or change a filter. Drag project
+cards on the Projects page to reorder them.
 
 ### Projects
 
-Choose **New project** to create a colour-coded project. Its page has a
+Choose **New project** to create a colour-coded project. Drag its card on the
+Projects page to change the project order. Its page has a
 notebook for plain-text notes and a task list. Use the add-task field to create
 a task or search for an existing task to attach it to the project. Deleting a
 project does not delete its tasks.
