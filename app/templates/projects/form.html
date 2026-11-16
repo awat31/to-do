@@ -13,11 +13,11 @@
   <div class="field">
     {{ form.color.label }}
     <div class="swatches">
-      {% for value, label in form.color.choices %}
-      <label class="swatch-option">
-        <input type="radio" name="{{ form.color.name }}" value="{{ value }}" {{ 'checked' if form.color.data == value }}>
-        <span class="swatch" style="background: {{ color_hex(value) }}"></span>
-      </label>
+      {% for choice in form.color.choices %}
+        <label class="swatch-option">
+          <input type="radio" name="{{ form.color.name }}" value="{{ choice.value }}" {{ 'checked' if form.color.data == choice.value }}>
+          <span class="swatch" style="background: {{ color_hex(choice.value) }}"></span>
+        </label>
       {% endfor %}
     </div>
   </div>
