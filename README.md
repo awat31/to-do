@@ -1,10 +1,16 @@
 # To-Do
 
-A Flask task manager with projects, nested tasks, flexible work schedules,
+An open-soruce Flask task manager with projects, nested tasks, flexible work schedules,
 recurring tasks, trash and undo, and day / week / month / year calendars.
 Accounts have private tasks, projects, schedules, and trash; usernames are
 case-insensitive, and ownership is enforced in both route queries and database
 constraints.
+
+Run locally on your infrastructure. Designed to be run on Ubuntu. Run in WSL or 
+an LXC container.
+
+Bases tasks on due date. Group by projects. All tasks for a given day are available
+in that respective week, month, and year. Gives a time-oriented task management.
 
 ## Features
 
