@@ -2316,3 +2316,234 @@ def test_admin_can_delete_self_from_user_list_and_is_logged_out(app, logged_in):
     assert "all of its data were deleted" in response.data.decode()
     assert client.get("/login").status_code == 200
     assert db.session.get(User, admin_id) is None
+
+
+# --- CSV import -------------------------------------------------------------
+
+def _import_csv(logged_in, csv_text, filename="tasks.csv"):
+    from io import BytesIO
+    token = _token(logged_in.get("/tasks/import").data.decode())
+    return logged_in.post(
+        "/tasks/import",
+        data={
+            "file": (BytesIO(csv_text.encode("utf-8")), filename),
+            "csrf_token": token,
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+
+def test_import_page_renders(logged_in):
+    resp = logged_in.get("/tasks/import")
+    assert resp.status_code == 200
+    page = resp.data.decode()
+    assert "Import tasks" in page
+    assert "title" in page
+
+
+def test_import_minimal_csv(logged_in):
+    resp = _import_csv(logged_in, "title\nBuy milk\nWalk dog\n")
+    assert resp.status_code == 200
+    from app.models import Task
+    titles = {t.title for t in Task.query.all()}
+    assert titles == {"Buy milk", "Walk dog"}
+
+
+def test_import_full_columns(logged_in):
+    from app.models import Project, Task, TaskDate
+    logged_in.post("/projects/new", data={"name": "Home", "color": "blue"})
+    csv_text = (
+        "title,notes,due_date,work_dates,project,done\n"
+        '"Renovate kitchen","Sand the walls",2026-05-01,2026-04-28,Home,false\n'
+        '"Old chore",,,,Home,true\n'
+    )
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+
+    task = Task.query.filter_by(title="Renovate kitchen").one()
+    assert task.notes == "Sand the walls"
+    assert task.due_date.isoformat() == "2026-05-01"
+    assert not task.done
+    assert TaskDate.query.filter_by(task_id=task.id).count() == 1
+    project = Project.query.filter_by(name="Home").one()
+    assert task.project_id == project.id
+
+    done_task = Task.query.filter_by(title="Old chore").one()
+    assert done_task.done
+    assert done_task.due_date is None
+
+
+def test_import_work_date_ranges(logged_in):
+    from app.models import Task, TaskDate
+    csv_text = (
+        "title,work_dates\n"
+        '"Trip","2026-06-01-2026-06-03, 2026-06-07"\n'
+    )
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    task = Task.query.filter_by(title="Trip").one()
+    dates = sorted(td.date.isoformat() for td in TaskDate.query.filter_by(task_id=task.id))
+    assert dates == ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-07"]
+
+
+def test_import_parent_links_by_title(logged_in):
+    from app.models import Task
+    csv_text = (
+        "title,parent\n"
+        '"Plan holiday",\n'
+        '"Book flights",Plan holiday\n'
+    )
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    parent = Task.query.filter_by(title="Plan holiday").one()
+    child = Task.query.filter_by(title="Book flights").one()
+    assert child.parent_id == parent.id
+    assert parent.parent_id is None
+
+
+def test_import_parent_from_existing_task(logged_in):
+    from app.models import Task
+    _create_task(logged_in, title="Existing parent")
+    csv_text = "title,parent\nChild,Existing parent\n"
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    parent = Task.query.filter_by(title="Existing parent").one()
+    child = Task.query.filter_by(title="Child").one()
+    assert child.parent_id == parent.id
+
+
+def test_import_reports_bad_rows_and_continues(logged_in):
+    from app.models import Task
+    csv_text = (
+        "title,due_date\n"
+        '"Good task",2026-05-01\n'
+        '"Bad date",not-a-date\n'
+        '\n'
+        '"Also good",\n'
+    )
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    page = resp.data.decode()
+    assert "Line 3" in page  # bad row reported by line number
+    titles = {t.title for t in Task.query.all()}
+    assert titles == {"Good task", "Also good"}
+
+
+def test_import_missing_title_row_skipped(logged_in):
+    from app.models import Task
+    csv_text = (
+        "title\n"
+        '"Has title"\n'
+        '"   "\n'
+    )
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    titles = {t.title for t in Task.query.all()}
+    assert titles == {"Has title"}
+
+
+def test_import_unknown_project_warns_but_imports(logged_in):
+    from app.models import Task
+    csv_text = "title,project\nOrphan,Missing project\n"
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    task = Task.query.filter_by(title="Orphan").one()
+    assert task.project_id is None
+    assert "Missing project" in resp.data.decode()
+
+
+def test_import_unknown_parent_warns_but_imports(logged_in):
+    from app.models import Task
+    csv_text = "title,parent\nLonely,Nonexistent\n"
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    task = Task.query.filter_by(title="Lonely").one()
+    assert task.parent_id is None
+
+
+def test_import_requires_title_column(logged_in):
+    resp = _import_csv(logged_in, "name\nJust a name\n")
+    assert resp.status_code == 400
+    from app.models import Task
+    assert Task.query.count() == 0
+
+
+def test_import_requires_file(logged_in):
+    token = _token(logged_in.get("/tasks/import").data.decode())
+    resp = logged_in.post(
+        "/tasks/import",
+        data={"csrf_token": token},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 400
+    page = resp.data.decode()
+    assert "Choose a CSV file" in page
+
+
+def test_import_rejects_non_utf8(logged_in):
+    from io import BytesIO
+    token = _token(logged_in.get("/tasks/import").data.decode())
+    resp = logged_in.post(
+        "/tasks/import",
+        data={
+            "file": (BytesIO(b"\xff\xfe\x00b\x00a\x00d"), "bad.csv"),
+            "csrf_token": token,
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert resp.status_code == 400
+    assert "UTF-8" in resp.data.decode()
+
+
+def test_import_header_case_insensitive(logged_in):
+    from app.models import Task
+    csv_text = "TITLE,Due_Date\nCapitalised,2026-05-05\n"
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    task = Task.query.filter_by(title="Capitalised").one()
+    assert task.due_date.isoformat() == "2026-05-05"
+
+
+def test_import_cycle_falls_back_to_top_level(logged_in):
+    from app.models import Task
+    csv_text = (
+        "title,parent\n"
+        '"A",B\n'
+        '"B",A\n'
+    )
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    a = Task.query.filter_by(title="A").one()
+    b = Task.query.filter_by(title="B").one()
+    # One of them keeps the parent link, the other is pushed to top level so
+    # no cycle exists.
+    if a.parent_id == b.id:
+        assert b.parent_id is None
+    else:
+        assert b.parent_id == a.id
+        assert a.parent_id is None
+
+
+def test_import_self_parent_rejected(logged_in):
+    from app.models import Task
+    csv_text = "title,parent\nSolo,Solo\n"
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    task = Task.query.filter_by(title="Solo").one()
+    assert task.parent_id is None
+
+
+def test_import_done_accepts_word_variants(logged_in):
+    from app.models import Task
+    csv_text = (
+        "title,done\n"
+        '"Yes task",YES\n'
+        '"No task",0\n'
+    )
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    assert Task.query.filter_by(title="Yes task").one().done
+    assert not Task.query.filter_by(title="No task").one().done
