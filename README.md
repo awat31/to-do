@@ -12,6 +12,8 @@ an LXC container.
 Bases tasks on due date. Group by projects. All tasks for a given day are available
 in that respective week, month, and year. Gives a time-oriented task management.
 
+Yes, it's vibe coded. But that doesn't mean it's not useful.
+
 ## Features
 
 - **Tasks and sub-tasks** — nest tasks, track progress across leaf tasks, add
