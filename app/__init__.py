@@ -1,12 +1,15 @@
 """Application factory and shared extensions."""
+import hashlib
 import os
 import re
 import secrets
+import tempfile
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import find_dotenv, load_dotenv
-from flask import Flask, render_template, send_from_directory
-from flask_login import LoginManager, current_user
+from flask import Flask, flash, redirect, render_template, request, send_from_directory, session, url_for
+from flask_login import LoginManager, current_user, logout_user
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
 from sqlalchemy.exc import IntegrityError
@@ -22,20 +25,44 @@ login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 
 _DEFAULT_HIGHLIGHT = "#f97316"
-_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
+_HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+_asset_version_cache: dict[str, str] = {}
 
 
 def _asset_version(app: Flask) -> str:
-    """A cheap cache-buster based on the newest static-file mtime."""
+    """Return a content-based cache key for the static assets.
+
+    Hashing file contents on every render is not free, so the result is
+    cached per static-folder path. The cache key is the fingerprint of the
+    file set — each file's path, size and mtime_ns — which is stable across
+    restarts, changes whenever a file is edited (even twice within the same
+    clock tick, since a rewrite changes size or mtime), and costs no reads.
+    """
     root = Path(app.static_folder or "")
+    cache_key = str(root)
     try:
-        newest = max(
-            (p.stat().st_mtime for p in root.rglob("*") if p.is_file()),
-            default=0,
-        )
-    except OSError:  # pragma: no cover
-        newest = 0
-    return str(int(newest))
+        files = sorted(path for path in root.rglob("*") if path.is_file())
+        fingerprint = hashlib.sha256()
+        for path in files:
+            stat = path.stat()
+            fingerprint.update(path.relative_to(root).as_posix().encode("utf-8"))
+            fingerprint.update(f"\0{stat.st_size}\0{stat.st_mtime_ns}\0".encode("ascii"))
+    except OSError:
+        return "0" * 16
+    fp_hex = fingerprint.hexdigest()
+    cached = _asset_version_cache.get(cache_key)
+    if cached is not None and cached[0] == fp_hex:
+        return cached[1]
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as asset:
+            for chunk in iter(lambda: asset.read(65536), b""):
+                digest.update(chunk)
+    version = digest.hexdigest()[:16]
+    _asset_version_cache[cache_key] = (fp_hex, version)
+    return version
 
 
 def _appearance_colors(value: str | None) -> tuple[str, str]:
@@ -54,16 +81,43 @@ def _instance_secret_key(app: Flask) -> str:
     if app.config.get("SECRET_KEY"):
         return app.config["SECRET_KEY"]
     path = Path(app.instance_path) / "secret_key"
-    if path.is_file():
-        app.config["SECRET_KEY"] = path.read_text().strip()
-    else:
-        app.config["SECRET_KEY"] = secrets.token_urlsafe(48)
-        path.write_text(app.config["SECRET_KEY"])
+    try:
+        secret = path.read_text().strip()
+    except FileNotFoundError:
+        candidate = secrets.token_urlsafe(48)
+        temporary_path = None
         try:
-            os.chmod(path, 0o600)
-        except OSError:  # pragma: no cover
-            pass
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                delete=False,
+            ) as temporary:
+                temporary_path = Path(temporary.name)
+                temporary.write(candidate)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            try:
+                os.link(temporary_path, path)
+                secret = candidate
+            except FileExistsError:
+                secret = path.read_text().strip()
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    if not secret:
+        raise RuntimeError(f"The session signing key at {path} is empty.")
+    os.chmod(path, 0o600)
+    app.config["SECRET_KEY"] = secret
     return app.config["SECRET_KEY"]
+
+
+def _secure_instance_dir(app: Flask) -> Path:
+    path = Path(app.instance_path)
+    path.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(path, 0o700)
+    return path
 
 
 def _ensure_admin(app: Flask) -> None:
@@ -97,15 +151,18 @@ def _ensure_admin(app: Flask) -> None:
             return
         if generated:
             path = Path(app.instance_path) / "admin_password.txt"
-            path.write_text(
-                "Username: admin\n"
-                f"Password: {password}\n"
-                "Delete this file after noting the password.\n"
+            fd = os.open(
+                path,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
             )
-            try:
-                os.chmod(path, 0o600)
-            except OSError:  # pragma: no cover
-                pass
+            with os.fdopen(fd, "w", encoding="utf-8") as password_file:
+                os.fchmod(password_file.fileno(), 0o600)
+                password_file.write(
+                    "Username: admin\n"
+                    f"Password: {password}\n"
+                    "Delete this file after noting the password.\n"
+                )
             app.logger.warning(
                 "Created admin user; password written to %s", path,
             )
@@ -121,8 +178,12 @@ def create_app(config_class=None) -> Flask:
     if dotenv_path:
         load_dotenv(dotenv_path, override=False)
     app.config.from_object(config_class or get_config_class())
+    try:
+        ZoneInfo(app.config.get("TIMEZONE", "UTC"))
+    except (TypeError, ZoneInfoNotFoundError) as exc:
+        raise RuntimeError("TIMEZONE must be a valid IANA timezone.") from exc
 
-    Path(app.instance_path).mkdir(parents=True, exist_ok=True)
+    _secure_instance_dir(app)
     _instance_secret_key(app)
     app.config["ASSET_VERSION"] = _asset_version(app)
 
@@ -174,6 +235,31 @@ def create_app(config_class=None) -> Flask:
             db.session.info.get("todo_task_version", 0) + 1
         )
 
+    @app.before_request
+    def reject_stale_sessions():
+        """Log out sessions that predate the user's latest password change.
+
+        Password change bumps ``User.session_version``; a session carrying
+        an older (or missing, post-rollover) stamp is torn down here so a
+        stolen cookie cannot outlive the password it was minted under.
+        Remember-me cookies are also cleared via ``logout_user``'s marker.
+        """
+        if not current_user.is_authenticated:
+            return None
+        if request.endpoint in ("auth.login", "auth.logout", "static", "healthz"):
+            return None
+        stored = session.get("_session_version")
+        if stored is not None and stored != (current_user.session_version or 0):
+            logout_user()
+            session.clear()
+            flash(
+                "Your session ended because your password was changed. "
+                "Please sign in again.",
+                "ok",
+            )
+            return redirect(url_for("auth.login"))
+        return None
+
     @app.context_processor
     def inject_globals():
         from flask import session
@@ -182,10 +268,8 @@ def create_app(config_class=None) -> Flask:
         highlight_color, highlight_text = _appearance_colors(
             user.highlight_color if user else None
         )
-        batch_id = session.get("last_deleted_batch")
+        batch_id = session.pop("last_deleted_batch", None)
         last_batch = db.session.get(DeletedBatch, batch_id) if batch_id else None
-        if batch_id and last_batch is None:
-            session.pop("last_deleted_batch", None)
         return {
             "last_deleted_batch": last_batch,
             "PROJECT_COLORS": PROJECT_COLORS,

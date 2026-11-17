@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import task_tree with context %}
+{% from "_macros.html" import task_card with context %}
 {% from "_prefs.html" import hide_completed_toggle with context %}
 {% block title %}Tasks · To-Do{% endblock %}
 {% block content %}
@@ -8,10 +8,11 @@
   <div class="head-actions">
     {{ hide_completed_toggle(request.path) }}
     <a class="btn btn-primary" href="{{ url_for('tasks.create') }}">New task</a>
+    <a class="btn btn-trash" href="{{ url_for('tasks.trash') }}">Deleted tasks</a>
   </div>
 </div>
 
-<form method="get" class="filter-bar">
+<form method="get" class="filter-bar js-task-filters">
   <input type="search" name="q" value="{{ q }}" class="input" placeholder="Search task names…" aria-label="Search task names">
   <select name="project" class="input" aria-label="Filter by project">
     <option value="">All projects</option>
@@ -24,12 +25,20 @@
     <option value="open" {{ 'selected' if status == 'open' }}>Open</option>
     <option value="done" {{ 'selected' if status == 'done' }}>Done</option>
   </select>
-  <button class="btn btn-soft" type="submit">Filter</button>
+  <select name="sort" class="input" aria-label="Order tasks">
+    <option value="default" {{ 'selected' if sort_order == 'default' }}>Default order</option>
+    <option value="due" {{ 'selected' if sort_order == 'due' }}>Due date (earliest first)</option>
+    <option value="project" {{ 'selected' if sort_order == 'project' }}>By project</option>
+  </select>
   {% if filtered %}<a class="btn btn-ghost" href="{{ url_for('tasks.index') }}">Clear</a>{% endif %}
 </form>
 
 {% if roots %}
-  {{ task_tree(roots) }}
+  <ul class="task-tree task-list">
+    {% for task in roots %}
+      <li><div class="tree-row">{{ task_card(task, next_url=request.full_path, show_delete=true) }}</div></li>
+    {% endfor %}
+  </ul>
 {% else %}
   <p class="empty big">
     {% if filtered %}No tasks match those filters.

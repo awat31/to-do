@@ -31,6 +31,112 @@
     });
   });
 
+  document.querySelectorAll(".js-task-filters").forEach((form) => {
+    const search = form.querySelector('input[name="q"]');
+    let timer = null;
+    if (search) {
+      search.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => form.requestSubmit(), 300);
+      });
+    }
+    form.querySelectorAll("select").forEach((select) => {
+      select.addEventListener("change", () => form.requestSubmit());
+    });
+  });
+
+  const undoBar = document.querySelector(".undo-bar");
+  if (undoBar) {
+    window.setTimeout(() => undoBar.remove(), 5000);
+  }
+
+  const subtaskInput = document.getElementById("add-subtask");
+  if (subtaskInput && window.location.hash === "#add-subtask") {
+    subtaskInput.focus();
+  }
+
+  const projectGrid = document.querySelector(".project-grid[data-reorder-url]");
+  if (projectGrid) {
+    const status = document.querySelector(".project-reorder-status");
+    let dragged = null;
+    let previousOrder = [];
+    let savingOrder = false;
+    let saveAgain = false;
+
+    const cards = () => Array.from(projectGrid.querySelectorAll(".project-card"));
+    const saveOrder = () => {
+      if (savingOrder) {
+        saveAgain = true;
+        return;
+      }
+
+      savingOrder = true;
+      saveAgain = false;
+      const projectIds = cards().map((card) => Number(card.dataset.projectId));
+      fetch(projectGrid.dataset.reorderUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ project_ids: projectIds }),
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.json();
+        })
+        .then((data) => {
+          if (!data.ok) throw new Error("Project order was not saved.");
+          if (!saveAgain && status) status.textContent = "Project order saved.";
+        })
+        .catch((error) => {
+          if (!saveAgain) {
+            previousOrder.forEach((card) => projectGrid.appendChild(card));
+            if (status) status.textContent = "Could not save project order. Please try again.";
+          }
+          console.error(error);
+        })
+        .finally(() => {
+          savingOrder = false;
+          if (saveAgain) saveOrder();
+        });
+    };
+
+    projectGrid.addEventListener("dragstart", (event) => {
+      const card = event.target.closest(".project-card");
+      if (!card) return;
+      dragged = card;
+      previousOrder = cards();
+      card.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+    });
+    projectGrid.addEventListener("dragover", (event) => {
+      if (!dragged) return;
+      const target = event.target.closest(".project-card");
+      if (!target || target === dragged) return;
+      event.preventDefault();
+      const bounds = target.getBoundingClientRect();
+      const draggedBounds = dragged.getBoundingClientRect();
+      const sameRow = Math.abs(draggedBounds.top - bounds.top) < bounds.height / 2;
+      const after = sameRow
+        ? event.clientX > bounds.left + bounds.width / 2
+        : event.clientY > bounds.top + bounds.height / 2;
+      projectGrid.insertBefore(dragged, after ? target.nextSibling : target);
+      cards().forEach((card) => card.classList.toggle("is-drop-target", card === target));
+    });
+    projectGrid.addEventListener("drop", (event) => {
+      if (!dragged) return;
+      event.preventDefault();
+      saveOrder();
+    });
+    projectGrid.addEventListener("dragend", () => {
+      if (dragged) dragged.classList.remove("is-dragging");
+      cards().forEach((card) => card.classList.remove("is-drop-target"));
+      dragged = null;
+    });
+  }
+
   // Debounced, serialised autosave for note editors. The final edit is sent
   // with sendBeacon/keepalive when the page is hidden, and transient failures
   // are retried with exponential backoff.
@@ -249,56 +355,6 @@
     },
     true
   );
-
-  // Drag-and-drop sibling reordering on task trees.
-  const dragRows = document.querySelectorAll(".js-drag-row");
-  if (dragRows.length) {
-    let dragged = null;
-
-    const clearDrop = () => {
-      document.querySelectorAll(".drop-target").forEach((row) =>
-        row.classList.remove("drop-target")
-      );
-    };
-
-    dragRows.forEach((row) => {
-      row.addEventListener("dragstart", (e) => {
-        dragged = row;
-        row.classList.add("dragging");
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", row.dataset.taskId);
-      });
-      row.addEventListener("dragend", () => {
-        row.classList.remove("dragging");
-        clearDrop();
-        dragged = null;
-      });
-      row.addEventListener("dragover", (e) => {
-        if (!dragged || dragged === row) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        clearDrop();
-        row.classList.add("drop-target");
-      });
-      row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
-      row.addEventListener("drop", (e) => {
-        e.preventDefault();
-        if (!dragged || dragged === row) return;
-        const rect = row.getBoundingClientRect();
-        const position = e.clientY > rect.top + rect.height / 2 ? "after" : "before";
-        const url = "/tasks/" + encodeURIComponent(dragged.dataset.taskId) + "/reorder";
-        window
-          .postJSON(url, { target_id: Number(row.dataset.taskId), position: position })
-          .then((data) => {
-            if (data && data.ok) window.location.reload();
-          })
-          .catch(() => {
-            clearDrop();
-            window.alert("That move could not be completed.");
-          });
-      });
-    });
-  }
 
   // "Jump to…" popup on the calendar toolbar.
   const jumpBtn = document.getElementById("jump-toggle");

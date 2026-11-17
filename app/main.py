@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
 from . import periods, queries
-from .models import Task, TaskDate, db
+from .models import Task
 from .utils import redirect_back
 
 bp = Blueprint("main", __name__)
@@ -60,17 +60,10 @@ def dashboard():
 
     overdue = Task.query.filter(
         Task.user_id == current_user.id,
-        Task.done == False,
-        Task.due_date != None,
+        Task.done.is_(False),
+        Task.due_date.is_not(None),
         Task.due_date < t,
     ).count()
-    unscheduled = Task.query.filter(
-        Task.user_id == current_user.id,
-        Task.done == False,
-        Task.due_date == None,
-        ~Task.id.in_(db.session.query(TaskDate.task_id)),
-    ).count()
-
     return render_template(
         "dashboard.html",
         today=t,
@@ -81,7 +74,6 @@ def dashboard():
         week_end=week_end,
         month_end=month_end,
         overdue=overdue,
-        unscheduled=unscheduled,
     )
 
 

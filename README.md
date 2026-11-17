@@ -20,9 +20,9 @@ constraints.
   and year views have list and calendar layouts; year view links its twelve
   mini-calendars to their months. Month and week calendar days link to the day
   view.
-- **Task list tools** — filter by title, project, and status; drag siblings to
-  reorder them; and show or hide completed tasks. Task details include controls
-  to complete, move, or reschedule a whole subtree.
+- **Task list tools** — filter by title, project, and status; order top-level
+  tasks by due date or project; and show or hide completed tasks. Task details
+  include controls to complete, move, or reschedule a whole subtree.
 - **Trash and undo** — deleting a task snapshots its subtree. Restore from the
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
@@ -54,7 +54,9 @@ On a new, migrated database, the app also creates an initial account named
 unless `TODO_ADMIN_PASSWORD` was set before startup. This account can manage
 users. Sign in and change its password from the account link in the top
 navigation; keep the password file private and delete it after noting the
-generated password.
+generated password. The app restricts its `instance/` directory to the
+service owner so the database, session key, and generated password remain
+private.
 
 ### Dashboard and tasks
 
@@ -76,13 +78,15 @@ Sub-tasks can be nested; on a parent task, the progress indicator summarizes
 completed leaf tasks.
 
 On a task's detail page, **Sub-tree actions** can mark the task and all its
-sub-tasks done, move them to a project, or set their due date. Drag task
-siblings by the handle in a task tree to change their order. The Tasks page
-can be filtered by title, project, or open/done status.
+sub-tasks done, move them to a project, or set their due date. The Tasks page
+shows top-level tasks only, puts completed tasks last, and filters by title,
+project, and open/done status as you type or change a filter. Drag project
+cards on the Projects page to reorder them.
 
 ### Projects
 
-Choose **New project** to create a colour-coded project. Its page has a
+Choose **New project** to create a colour-coded project. Drag its card on the
+Projects page to change the project order. Its page has a
 notebook for plain-text notes and a task list. Use the add-task field to create
 a task or search for an existing task to attach it to the project. Deleting a
 project does not delete its tasks.
@@ -203,7 +207,10 @@ proxy. Keep the private key readable only by the service account.
 
 For a reverse proxy that handles TLS, omit both Gunicorn certificate settings
 and bind Gunicorn to loopback, for example `BIND=127.0.0.1:8000`. Configure the
-proxy to forward requests to Gunicorn and enable secure cookies as above.
+proxy to forward requests to Gunicorn and enable secure cookies as above. If
+the proxy connects from a non-loopback address, set `FORWARDED_ALLOW_IPS` to
+that proxy's trusted IP address or addresses; do not use `*` on a public
+interface.
 
 ### Configuration
 
@@ -217,6 +224,7 @@ commonly used settings.
 | `WEB_CONCURRENCY` | Calculated from CPU count | Gunicorn worker count. |
 | `THREADS` | `2` | Threads per Gunicorn worker. |
 | `GUNICORN_TIMEOUT` | `60` | Worker timeout in seconds. |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1,::1` | Trusted proxy addresses allowed to set forwarded headers. |
 | `TODO_ADMIN_PASSWORD` | Generated | Initial `admin` password, used only when the database has no users. |
 | `TODO_DATABASE` | `instance/todo.sqlite3` | SQLAlchemy database URL. |
 | `SECRET_KEY` | Generated in `instance/secret_key` | Session and CSRF signing key. |
@@ -264,8 +272,6 @@ requirements), then run:
   the `instance/` directory, or use SQLite's online backup facility while it
   is running. SQLite uses foreign keys, WAL journaling, and a 5-second busy
   timeout.
-- `index.html` in the repository root is a separate, dependency-free
-  localStorage demo; it is not part of the deployed Flask service.
 
 ```text
 app/

@@ -199,6 +199,27 @@ def test_date_range_expands_into_daily_work_dates(logged_in):
     assert dates == ["2026-03-10", "2026-03-11", "2026-03-12"]
 
 
+def test_work_date_range_uses_configured_limit(app, logged_in):
+    task = _create_task(logged_in, title="Limited range")
+    app.config["MAX_WORK_RANGE_DAYS"] = 2
+
+    accepted = logged_in.post(
+        f"/tasks/{task.id}/work-dates",
+        data={"start": "2026-03-10", "end": "2026-03-11"},
+        follow_redirects=True,
+    )
+    assert accepted.status_code == 200
+    assert "Added 2 work dates." in accepted.data.decode()
+
+    rejected = logged_in.post(
+        f"/tasks/{task.id}/work-dates",
+        data={"start": "2026-03-10", "end": "2026-03-12"},
+        follow_redirects=True,
+    )
+    assert rejected.status_code == 200
+    assert "Ranges are limited to 2 days." in rejected.data.decode()
+
+
 def test_subtask_progress_and_cascade_delete(logged_in):
     from app.models import Task
 
@@ -254,6 +275,42 @@ def test_project_notes_autosave(logged_in):
     assert Project.query.first().notes == "Budget ~500"
 
 
+def test_project_edit_page_renders_and_saves(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Renovation", "color": "pink"})
+    project = Project.query.filter_by(name="Renovation").one()
+
+    page = logged_in.get(f"/projects/{project.id}/edit")
+    assert page.status_code == 200
+    assert "Edit project" in page.data.decode()
+
+    response = logged_in.post(
+        f"/projects/{project.id}/edit",
+        data={"name": "Kitchen", "color": "blue"},
+    )
+    assert response.status_code == 302
+    db.session.refresh(project)
+    assert project.name == "Kitchen"
+    assert project.color == "blue"
+
+
+def test_task_detail_shows_project_before_due_date_and_labels_subtree_action(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Project before due", "color": "pink"})
+    project = Project.query.filter_by(name="Project before due").one()
+    task = _create_task(logged_in, title="Task with project", project=project.id)
+
+    page = logged_in.get(f"/tasks/{task.id}").data.decode()
+
+    assert page.index("<h2>Project</h2>") < page.index("<h2>Due date</h2>")
+    assert "Change project" in page
+    assert "Set due date" in page
+    assert "Mark whole subtree complete" in page
+    assert "Move subtree" not in page
+
+
 def test_quick_add_work_date(logged_in):
     import datetime as dt
     task = _create_task(logged_in, title="Quick add")
@@ -301,6 +358,14 @@ def test_dashboard_card_prefills_today(logged_in):
     db.session.commit()
     page = logged_in.get("/").data.decode()
     assert f'value="{dt.date.today().isoformat()}"' in page
+
+
+def test_dashboard_does_not_show_unscheduled_alert(logged_in):
+    _create_task(logged_in, title="Unscheduled task")
+
+    page = logged_in.get("/").data.decode()
+
+    assert "open, unscheduled" not in page
 
 
 def test_dashboard_work_count_matches_list(logged_in):
@@ -403,7 +468,7 @@ def test_hide_completed_preference(logged_in):
     assert 'name="hide" value="1" checked' not in off
 
 
-def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
+def test_task_index_hides_done_parents_with_open_children(logged_in):
     parent = _create_task(logged_in, title="Done container")
     parent.done = True
     _create_task(logged_in, title="Still open child", parent=parent.id)
@@ -414,8 +479,8 @@ def test_hide_completed_keeps_done_parents_with_open_children(logged_in):
 
     logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": "/"})
     page = logged_in.get("/tasks/").data.decode()
-    assert "Still open child" in page          # child survives
-    assert "Done container" in page            # kept as its container
+    assert "Still open child" not in page
+    assert "Done container" not in page
     from app.queries import filter_task_tree
     roots = Task.query.filter_by(parent_id=None).all()
     filtered = filter_task_tree(roots, True)
@@ -452,6 +517,82 @@ def test_task_search(logged_in):
 
     miss = json.loads(logged_in.get("/tasks/search?q=zzz").data)["results"]
     assert miss == []
+
+
+def test_task_search_reports_when_results_are_capped(logged_in):
+    import json
+
+    from app.models import Task, User
+
+    user_id = User.query.filter_by(username="admin").one().id
+    db.session.add_all(
+        [Task(user_id=user_id, title=f"Search cap {i:02}") for i in range(51)]
+    )
+    db.session.commit()
+
+    response = json.loads(logged_in.get("/tasks/search").data)
+    assert len(response["results"]) == 50
+    assert response["capped"] is True
+
+
+def test_reassign_rejects_malformed_project_id(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Assigned", "color": "blue"})
+    project = Project.query.filter_by(name="Assigned").one()
+    task = _create_task(logged_in, title="Keep assigned", project=project.id)
+
+    response = logged_in.post(
+        f"/tasks/{task.id}/reassign",
+        data={"project_id": "not-an-id"},
+    )
+    assert response.status_code == 400
+    db.session.refresh(task)
+    assert task.project_id == project.id
+
+
+def test_clearing_due_date_disables_recurrence(logged_in):
+    task = _create_task(logged_in, title="Repeating task", due="2026-03-10")
+    task.recurrence = "weekly"
+    db.session.commit()
+
+    response = logged_in.post(f"/tasks/{task.id}/due", data={"due_date": ""})
+    assert response.status_code == 302
+    db.session.refresh(task)
+    assert task.due_date is None
+    assert task.recurrence == "none"
+
+
+def test_clearing_subtree_due_dates_disables_recurrence(logged_in):
+    parent = _create_task(logged_in, title="Repeating parent", due="2026-03-10")
+    child = _create_task(
+        logged_in, title="Repeating child", due="2026-03-11", parent=parent.id
+    )
+    parent.recurrence = "weekly"
+    child.recurrence = "monthly"
+    db.session.commit()
+
+    response = logged_in.post(
+        f"/tasks/{parent.id}/reschedule", data={"due_date": ""}
+    )
+    assert response.status_code == 302
+    db.session.refresh(parent)
+    db.session.refresh(child)
+    assert parent.due_date is None and parent.recurrence == "none"
+    assert child.due_date is None and child.recurrence == "none"
+
+
+def test_descendant_query_terminates_on_corrupt_cycle(logged_in):
+    from app.models import Task
+
+    first = _create_task(logged_in, title="Cycle first")
+    second = _create_task(logged_in, title="Cycle second", parent=first.id)
+    first.parent_id = second.id
+    db.session.commit()
+
+    assert first.descendant_ids() == [second.id]
+    assert second.descendant_ids() == [first.id]
+    assert logged_in.post(f"/tasks/{first.id}/delete").status_code == 302
 
 
 def test_project_add_task_assigns_existing(logged_in):
@@ -529,13 +670,35 @@ def test_healthz(client):
     assert resp.status_code == 200
 
 
-def test_production_allows_plain_http_sessions():
+def test_production_allows_plain_http_sessions(monkeypatch, tmp_path):
     """Regression: secure cookies would break CSRF over plain http://."""
-    os.environ.pop("TODO_SECURE_COOKIES", None)
-    os.environ["TODO_ADMIN_PASSWORD"] = "test-password"  # keep _ensure_admin deterministic
-    from app.config import ProductionConfig
-    app = create_app(ProductionConfig)
+    monkeypatch.delenv("TODO_SECURE_COOKIES", raising=False)
+    from app.config import ProductionConfig, _env_bool
+
+    class IsolatedProductionConfig(ProductionConfig):
+        SECRET_KEY = "test-production-config-key"
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'production-config.db'}"
+        SESSION_COOKIE_SECURE = _env_bool("TODO_SECURE_COOKIES")
+        REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
+
+    app = create_app(IsolatedProductionConfig)
     assert app.config["SESSION_COOKIE_SECURE"] is False
+
+
+def test_configuration_rejects_invalid_values(monkeypatch):
+    from app.config import _env_bool, _env_int, get_config_class
+
+    monkeypatch.setenv("TEST_POSITIVE_INT", "-2")
+    with pytest.raises(RuntimeError, match="positive integer"):
+        _env_int("TEST_POSITIVE_INT", 3)
+
+    monkeypatch.setenv("TEST_BOOLEAN", "maybe")
+    with pytest.raises(RuntimeError, match="boolean"):
+        _env_bool("TEST_BOOLEAN")
+
+    monkeypatch.setenv("FLASK_CONFIG", "typo")
+    with pytest.raises(RuntimeError, match="FLASK_CONFIG"):
+        get_config_class()
 
 
 def test_session_cookie_not_secure_over_http(client):
@@ -556,16 +719,20 @@ def test_gunicorn_optional_tls_certificate_pair(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("TODO_SSL_CERTFILE", raising=False)
     monkeypatch.delenv("TODO_SSL_KEYFILE", raising=False)
+    monkeypatch.delenv("FORWARDED_ALLOW_IPS", raising=False)
 
     http_config = run_path(str(config_path))
     assert http_config["certfile"] is None
     assert http_config["keyfile"] is None
+    assert http_config["forwarded_allow_ips"] == "127.0.0.1,::1"
 
     monkeypatch.setenv("TODO_SSL_CERTFILE", "/certs/fullchain.pem")
     monkeypatch.setenv("TODO_SSL_KEYFILE", "/certs/private-key.pem")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "127.0.0.1,10.0.0.4")
     https_config = run_path(str(config_path))
     assert https_config["certfile"] == "/certs/fullchain.pem"
     assert https_config["keyfile"] == "/certs/private-key.pem"
+    assert https_config["forwarded_allow_ips"] == "127.0.0.1,10.0.0.4"
 
     monkeypatch.delenv("TODO_SSL_KEYFILE")
     with pytest.raises(RuntimeError, match="Set both TODO_SSL_CERTFILE"):
@@ -629,6 +796,112 @@ def test_login_lockout_after_repeated_failures(app, client):
         "/login", data={"username": "admin", "password": "test-password"}
     )
     assert resp.status_code == 302
+
+
+def test_login_ip_rate_limit(app, client):
+    """Excess logins from one IP are throttled with 429 before any DB work."""
+    from app import auth as auth_module
+
+    app.config["LOGIN_IP_LIMIT"] = 3
+    app.config["LOGIN_IP_WINDOW_MINUTES"] = 15
+    auth_module._login_limiter.reset("login:127.0.0.1")
+    try:
+        for _ in range(3):
+            resp = client.post("/login", data={"username": "admin", "password": "wrong"})
+            assert resp.status_code == 200
+        resp = client.post(
+            "/login", data={"username": "admin", "password": "test-password"}
+        )
+        assert resp.status_code == 429
+    finally:
+        auth_module._login_limiter.reset("login:127.0.0.1")
+
+
+def test_signup_ip_rate_limit(app, client):
+    from app import auth as auth_module
+
+    app.config["SIGNUP_IP_LIMIT"] = 2
+    app.config["SIGNUP_IP_WINDOW_HOURS"] = 1
+    auth_module._signup_limiter.reset("signup:127.0.0.1")
+    try:
+        for i in range(2):
+            # Each signup uses a fresh client: after signup the client is
+            # authenticated, and an authenticated visitor is redirected
+            # before the rate limiter is consulted.
+            resp = app.test_client().post(
+                "/signup",
+                data={"username": f"ratelimit{i}", "password": "longenough1"},
+                follow_redirects=True,
+            )
+            assert resp.status_code == 200
+        resp = app.test_client().post(
+            "/signup", data={"username": "ratelimit3", "password": "longenough1"}
+        )
+        assert resp.status_code == 429
+    finally:
+        auth_module._signup_limiter.reset("signup:127.0.0.1")
+
+
+def test_password_change_invalidates_other_sessions(app):
+    """A session minted before a password change is rejected afterwards."""
+    from app.models import User, db
+
+    user = User(username="pwc", display_name="pwc")
+    user.set_password("old-password-1")
+    db.session.add(user)
+    db.session.commit()
+
+    browser_a = app.test_client()
+    browser_b = app.test_client()
+    for browser in (browser_a, browser_b):
+        resp = browser.post(
+            "/login", data={"username": "pwc", "password": "old-password-1"}
+        )
+        assert resp.status_code == 302
+
+    # Browser A changes the password.
+    resp = browser_a.post(
+        "/account",
+        data={
+            "current_password": "old-password-1",
+            "new_password": "new-password-1",
+            "confirm_password": "new-password-1",
+        },
+        follow_redirects=True,
+    )
+    assert "Password changed." in resp.data.decode()
+
+    # Browser B's older session is torn down and redirected to login.
+    resp = browser_b.get("/")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+    # Browser A remains signed in (it was re-stamped).
+    assert browser_a.get("/").status_code == 200
+
+    # The old password no longer works; the new one does.
+    fresh = app.test_client()
+    resp = fresh.post(
+        "/login", data={"username": "pwc", "password": "old-password-1"}
+    )
+    assert "Invalid username or password" in resp.data.decode()
+    resp = fresh.post(
+        "/login", data={"username": "pwc", "password": "new-password-1"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+
+def test_rate_limiter_unit():
+    from app.ratelimit import SlidingWindowLimiter
+
+    limiter = SlidingWindowLimiter(limit=2, window_seconds=60)
+    assert limiter.check("k") is True
+    assert limiter.check("k") is True
+    assert limiter.check("k") is False  # over the limit
+    limiter.reset("k")
+    assert limiter.check("k") is True  # reset clears history
+    assert limiter.check("other") is True  # keys are independent
 
 
 def test_security_headers_and_html_no_store(client):
@@ -777,7 +1050,11 @@ def test_delete_moves_subtree_to_trash_and_restores_it(logged_in):
 
     resp = logged_in.post(f"/tasks/{parent_id}/delete", follow_redirects=True)
     body = resp.data.decode()
-    assert "Deleted" in body and "Undo" in body
+    assert '<div class="undo-bar">' in body and "Undo" in body
+    assert "You can undo this from Trash." not in body
+    assert '<div class="flashes">' not in body
+    refreshed = logged_in.get("/tasks/").data.decode()
+    assert '<div class="undo-bar">' not in refreshed
     db.session.expire_all()
     assert db.session.get(Task, parent_id) is None
     assert db.session.get(Task, child_id) is None
@@ -806,33 +1083,176 @@ def test_empty_trash(logged_in):
     assert Task.query.filter_by(title="Throwaway").first() is None
 
 
-def test_drag_reorder_moves_sibling(logged_in):
+def test_purging_trash_shows_task_deleted_message(logged_in):
+    from app.models import DeletedBatch
+
+    task = _create_task(logged_in, title="Permanent delete")
+    logged_in.post(f"/tasks/{task.id}/delete")
+    batch = DeletedBatch.query.one()
+
+    response = logged_in.post(
+        f"/tasks/trash/{batch.id}/purge", follow_redirects=True
+    )
+    body = response.data.decode()
+
+    assert "Task deleted permanently" in body
+    assert "Deleted batch removed permanently" not in body
+    assert DeletedBatch.query.count() == 0
+
+
+def test_task_index_shows_top_level_tasks_and_sorts_by_due_date(logged_in):
+    _create_task(logged_in, title="Due later", due="2026-03-20")
+    _create_task(logged_in, title="Due earlier", due="2026-03-01")
+    _create_task(logged_in, title="No due date")
+    parent = _create_task(logged_in, title="Unscheduled parent")
+    _create_task(logged_in, title="Child due later", due="2026-03-10", parent=parent.id)
+    _create_task(logged_in, title="Child due earlier", due="2026-03-05", parent=parent.id)
+
+    page = logged_in.get("/tasks/?sort=due").data.decode()
+    assert page.index("Due earlier") < page.index("Due later")
+    assert page.index("Due later") < page.index("No due date")
+    assert "Child due earlier" not in page
+    assert "Child due later" not in page
+    assert 'name="sort"' in page
+    assert '<option value="due" selected>' in page
+
+    filtered = logged_in.get(
+        "/tasks/?q=Due%20later&status=open&sort=due"
+    ).data.decode()
+    assert "Due later" in filtered and "Due earlier" not in filtered
+    assert "No due date" not in filtered
+    assert 'name="q" value="Due later"' in filtered
+    assert '<option value="open" selected>' in filtered
+    assert '<option value="due" selected>' in filtered
+
+
+def test_task_index_hides_subtasks_and_places_completed_roots_last(logged_in):
+    parent = _create_task(logged_in, title="Open root")
+    _create_task(logged_in, title="Hidden child", parent=parent.id)
+    completed = _create_task(logged_in, title="Done root")
+    completed.done = True
+    db.session.commit()
+
+    page = logged_in.get("/tasks/").data.decode()
+    assert "Hidden child" not in page
+    assert page.index("Open root") < page.index("Done root")
+
+
+def test_task_index_can_move_task_to_trash(logged_in):
+    from app.models import DeletedBatch, Task
+
+    task = _create_task(logged_in, title="Task from list")
+    child = _create_task(logged_in, title="Child from list", parent=task.id)
+    task_id, child_id = task.id, child.id
+    page = logged_in.get("/tasks/?sort=project").data.decode()
+
+    assert f'action="/tasks/{task_id}/delete"' in page
+    assert 'aria-label="Move task to Trash"' in page
+    assert "Move this task and all of its sub-tasks to Trash?" in page
+
+    response = logged_in.post(
+        f"/tasks/{task_id}/delete",
+        data={"next": "/tasks/?sort=project"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/tasks/?sort=project"
+    assert db.session.get(Task, task_id) is None
+    assert db.session.get(Task, child_id) is None
+    assert DeletedBatch.query.one().summary == "Task from list + 1 sub-task(s)"
+
+
+def test_completing_task_from_tasks_page_returns_to_tasks_page(logged_in):
+    task = _create_task(logged_in, title="Complete from task list")
+    page = logged_in.get("/tasks/?sort=project").data.decode()
+
+    assert 'name="next" value="/tasks/?sort=project"' in page
+    response = logged_in.post(
+        f"/tasks/{task.id}/toggle",
+        data={"next": "/tasks/?sort=project"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/tasks/?sort=project"
+    db.session.refresh(task)
+    assert task.done
+
+
+def test_task_index_can_sort_by_project(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Zulu project", "color": "blue"})
+    zulu = Project.query.filter_by(name="Zulu project").one()
+    logged_in.post("/projects/new", data={"name": "Alpha project", "color": "blue"})
+    alpha = Project.query.filter_by(name="Alpha project").one()
+    _create_task(logged_in, title="Zulu task", project=zulu.id)
+    _create_task(logged_in, title="Alpha task", project=alpha.id)
+    _create_task(logged_in, title="Unassigned task")
+
+    page = logged_in.get("/tasks/?sort=project").data.decode()
+    assert page.index("Alpha task") < page.index("Zulu task")
+    assert page.index("Zulu task") < page.index("Unassigned task")
+    assert '<option value="project" selected>' in page
+
+
+def test_project_order_can_be_saved(logged_in):
+    from app.models import Project
+
+    for name in ("First", "Second", "Third"):
+        logged_in.post("/projects/new", data={"name": name, "color": "blue"})
+    projects = {
+        project.name: project.id for project in Project.query.all()
+    }
+
+    response = logged_in.post(
+        "/projects/reorder",
+        json={"project_ids": [projects["Third"], projects["First"], projects["Second"]]},
+    )
+    assert response.status_code == 200
+    assert [project.name for project in Project.query.order_by(Project.position)] == [
+        "Third", "First", "Second"
+    ]
+    page = logged_in.get("/projects/").data.decode()
+    assert [
+        page.index(f'href="/projects/{projects[name]}"')
+        for name in ("Third", "First", "Second")
+    ] == sorted(
+        page.index(f'href="/projects/{projects[name]}"')
+        for name in ("Third", "First", "Second")
+    )
+
+
+def test_subtask_add_returns_focus_to_add_field(logged_in):
+    parent = _create_task(logged_in, title="Parent for quick add")
+    response = logged_in.post(
+        f"/tasks/{parent.id}/subtasks",
+        data={"title": "Quick child"},
+    )
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("#add-subtask")
+
+
+def test_completing_subtask_returns_to_parent(logged_in):
     from app.models import Task
 
-    first = _create_task(logged_in, title="First")
-    _create_task(logged_in, title="Second")
-    third = _create_task(logged_in, title="Third")
+    parent = _create_task(logged_in, title="Parent staying open")
+    child = _create_task(logged_in, title="Child to complete", parent=parent.id)
+    response = logged_in.post(f"/tasks/{child.id}/toggle")
+    assert response.status_code == 302
+    assert response.headers["Location"] == f"/tasks/{parent.id}"
+    db.session.refresh(child)
+    assert child.done
 
-    resp = logged_in.post(
-        f"/tasks/{third.id}/reorder",
-        json={"target_id": first.id, "position": "after"},
-    )
-    assert resp.status_code == 200 and resp.get_json()["ok"] is True
-    db.session.expire_all()
-    order = [
-        t.title
-        for t in Task.query.filter_by(parent_id=None).order_by(
-            Task.position, Task.id
-        )
-    ]
-    assert order == ["First", "Third", "Second"]
 
-    child = _create_task(logged_in, title="First child", parent=first.id)
-    resp = logged_in.post(
-        f"/tasks/{first.id}/reorder",
-        json={"target_id": child.id, "position": "before"},
-    )
-    assert resp.status_code == 400
+def test_task_index_keeps_default_order_when_due_sort_is_not_selected(logged_in):
+    task = _create_task(logged_in, title="Later task", due="2026-03-20")
+    _create_task(logged_in, title="Earlier task", due="2026-03-01")
+
+    page = logged_in.get("/tasks/").data.decode()
+    assert page.index("Earlier task") < page.index("Later task")
+    assert '<option value="default" selected>' in page
+    assert "drag-handle" not in page and 'draggable="true"' not in page
+    assert logged_in.post(f"/tasks/{task.id}/reorder").status_code == 404
 
 
 def test_bulk_subtree_actions(logged_in):
@@ -1103,6 +1523,56 @@ def test_timezone_setting_drives_today(app):
     expected = dt.datetime.now(ZoneInfo("Pacific/Kiritimati")).date()
     assert periods.today() == expected
     app.config["TIMEZONE"] = "UTC"
+
+
+def test_create_app_rejects_invalid_timezone():
+    class InvalidTimezoneConfig:
+        TIMEZONE = "Not/A_Real_Zone"
+
+    with pytest.raises(RuntimeError, match="TIMEZONE"):
+        create_app(InvalidTimezoneConfig)
+
+
+def test_instance_secret_key_is_persistent_and_private(tmp_path):
+    import stat
+
+    from flask import Flask
+    from app import _instance_secret_key
+
+    first_app = Flask("first", instance_path=str(tmp_path))
+    first_key = _instance_secret_key(first_app)
+    second_app = Flask("second", instance_path=str(tmp_path))
+
+    assert _instance_secret_key(second_app) == first_key
+    assert stat.S_IMODE((tmp_path / "secret_key").stat().st_mode) == 0o600
+
+
+def test_instance_directory_is_private(tmp_path):
+    import stat
+
+    from flask import Flask
+    from app import _secure_instance_dir
+
+    instance_dir = tmp_path / "instance"
+    instance_dir.mkdir(mode=0o755)
+    os.chmod(instance_dir, 0o755)
+    app = Flask("instance", instance_path=str(instance_dir))
+
+    assert _secure_instance_dir(app) == instance_dir
+    assert stat.S_IMODE(instance_dir.stat().st_mode) == 0o700
+
+
+def test_asset_version_tracks_content_changes(tmp_path):
+    from flask import Flask
+    from app import _asset_version
+
+    app = Flask("assets", static_folder=str(tmp_path))
+    asset = tmp_path / "app.js"
+    asset.write_text("first version")
+    first_version = _asset_version(app)
+    asset.write_text("second version")
+
+    assert _asset_version(app) != first_version
 
 
 # --- multi-user accounts and isolation ----------------------------------
@@ -1410,18 +1880,6 @@ def test_cross_user_records_return_404(app, logged_in):
     assert db.session.get(Task, admin_task.id) is not None
     assert db.session.get(Task, admin_task.id).done is False
     assert db.session.get(Project, admin_project.id) is not None
-
-
-def test_cross_user_reorder_target_is_rejected(app, logged_in):
-    admin_task = _create_task(logged_in, title="Admin reorder target")
-    alice = _signup(app)
-    alice_task = _create_task(alice, title="Alice reorder source")
-
-    resp = alice.post(
-        f"/tasks/{alice_task.id}/reorder",
-        json={"target_id": admin_task.id},
-    )
-    assert resp.status_code == 404
 
 
 def test_cannot_attach_task_to_another_users_project_or_parent(app, logged_in):

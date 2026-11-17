@@ -22,9 +22,8 @@
       <nav class="nav">
         <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}">Dashboard</a>
         <a href="{{ url_for('calendarview.view', kind='day') }}" class="{{ 'active' if request.blueprint == 'calendarview' }}">Calendar</a>
-        <a href="{{ url_for('tasks.index') }}" class="{{ 'active' if request.blueprint == 'tasks' and request.endpoint != 'tasks.trash' }}">Tasks</a>
+        <a href="{{ url_for('tasks.index') }}" class="{{ 'active' if request.blueprint == 'tasks' }}">Tasks</a>
         <a href="{{ url_for('projects.index') }}" class="{{ 'active' if request.blueprint == 'projects' }}">Projects</a>
-        <a href="{{ url_for('tasks.trash') }}" class="{{ 'active' if request.endpoint == 'tasks.trash' }}">Trash</a>
         {% if current_user.is_admin %}
           <a href="{{ url_for('auth.admin_users') }}" class="{{ 'active' if request.endpoint in ('auth.admin_users', 'auth.delete_user') }}">Users</a>
         {% endif %}

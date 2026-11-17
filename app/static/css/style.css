@@ -139,6 +139,8 @@ h3 { margin: 0; }
 .btn-ghost { background: transparent; color: var(--ink-soft); }
 .btn-ghost:hover { background: var(--accent-soft); color: var(--ink); }
 .btn-danger { background: var(--danger-soft); color: var(--danger-ink); }
+.btn-trash { background: var(--danger-soft); color: var(--danger-ink); border: 1.5px solid var(--danger); }
+.btn-trash:hover { filter: brightness(1.03); background: var(--danger-soft); color: var(--danger-ink); }
 .btn-sm { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
 .input {
   width: 100%; padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 10px;
@@ -239,6 +241,9 @@ h3 { margin: 0; }
 }
 .task-card.is-done { opacity: 0.55; }
 .task-card-main { flex: 1; min-width: 0; }
+.task-card-actions { display: flex; align-items: center; gap: 0.25rem; flex-shrink: 0; }
+.task-delete { padding: 0.3rem; }
+.task-delete:hover { background: var(--danger-soft); color: var(--danger-ink); }
 .task-title { color: var(--ink); font-weight: 600; }
 .task-meta { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.25rem; }
 .crumbs { font-size: 0.75rem; color: var(--ink-soft); display: block; }
@@ -280,17 +285,8 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   background: var(--line);
 }
 .tree-row {
-  margin-bottom: 0.45rem; display: flex; align-items: flex-start; gap: 0.15rem;
-  border-radius: var(--radius); transition: box-shadow 0.12s, opacity 0.12s;
+  margin-bottom: 0.45rem;
 }
-.tree-row > .task-card { flex: 1; min-width: 0; }
-.drag-handle {
-  color: var(--ink-soft); cursor: grab; padding: 0.7rem 0.1rem 0 0; font-size: 1rem;
-  user-select: none; line-height: 1;
-}
-.tree-row:hover > .drag-handle { color: var(--ink-soft); }
-.tree-row.dragging { opacity: 0.35; }
-.tree-row.drop-target { box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* ---- task filters ---- */
 .filter-bar {
@@ -300,6 +296,10 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 }
 .filter-bar .input { width: auto; }
 .filter-bar input[type="search"] { flex: 1; min-width: 180px; }
+.project-reorder-status { margin: -0.5rem 0 0.75rem; }
+.project-card[draggable="true"] { cursor: grab; }
+.project-card.is-dragging { opacity: 0.45; cursor: grabbing; }
+.project-card.is-drop-target { outline: 2px dashed var(--accent); outline-offset: 3px; }
 .chip-repeat {
   background: var(--repeat-soft);
   border-color: color-mix(in srgb, var(--repeat) 40%, var(--surface));
@@ -454,6 +454,20 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 /* ---- detail layout ---- */
 .detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 2rem; }
 @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }
+/* Dashboard & day-view: "Due today" / "Working on today" side by side. */
+.today-columns {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: start;
+}
+@media (max-width: 900px) { .today-columns { grid-template-columns: 1fr; } }
+
+/* Sub-tree actions: every control sits on one shared height so mixed
+   buttons, selects and date inputs line up instead of wobbling. */
+.subtree-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
+.subtree-actions-row { display: flex; gap: 0.5rem; align-items: stretch; flex-wrap: wrap; }
+.subtree-actions-row .input,
+.subtree-actions-row .input-date { width: auto; flex: 1 1 9rem; min-width: 0; height: auto; padding: 0.45rem 0.7rem; font-size: 0.9rem; }
+.subtree-actions-row .btn { flex: 0 0 auto; padding: 0.45rem 0.9rem; font-size: 0.9rem; }
+.subtree-actions > form:not(.subtree-actions-row) .btn { width: 100%; justify-content: center; }
 .side-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem; box-shadow: var(--shadow); }
 .date-list { list-style: none; padding: 0; margin: 0 0 0.75rem; }
 .date-list li {
@@ -505,8 +519,6 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   .task-card { gap: 0.45rem; padding: 0.55rem 0.6rem; }
   .quick-add { opacity: 1; }
   .quick-add .input-date-sm { width: 7.5rem; }
-  .tree-row { gap: 0; }
-  .drag-handle { display: none; }
   .task-tree ul { padding-left: 1rem; }
   .task-tree ul::before { display: none; }
   .cal-toolbar { gap: 0.55rem; padding: 0.55rem; }

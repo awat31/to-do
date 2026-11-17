@@ -11,12 +11,14 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from sqlalchemy import func
+from wtforms.fields.choices import SelectChoice
 
-from .access import project_or_404, task_or_404
+from .access import project_or_404, task_or_404, user_projects
+from .tasks import move_subtree
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
-from .queries import filter_task_tree, load_all_tasks, prepare_tasks
+from .queries import filter_task_tree, prepare_tasks
 from .utils import csrf_valid, flash_form_errors, notes_payload
 
 bp = Blueprint("projects", __name__, url_prefix="/projects")
@@ -26,9 +28,8 @@ bp = Blueprint("projects", __name__, url_prefix="/projects")
 @login_required
 def index():
     projects = (
-        Project.query
-        .filter_by(user_id=current_user.id)
-        .order_by(Project.name)
+        user_projects()
+        .order_by(Project.position, Project.name, Project.id)
         .all()
     )
     counts = dict(
@@ -46,7 +47,7 @@ def index():
 
 
 def _color_choices():
-    return [(name, name.capitalize()) for name in PROJECT_COLORS]
+    return [SelectChoice(name, name.capitalize()) for name in PROJECT_COLORS]
 
 
 @bp.route("/new", methods=("GET", "POST"))
@@ -59,6 +60,12 @@ def create():
             user_id=current_user.id,
             name=form.name.data.strip(),
             color=form.color.data,
+            position=(
+                db.session.query(func.max(Project.position))
+                .filter_by(user_id=current_user.id)
+                .scalar()
+                or 0
+            ) + 1,
         )
         db.session.add(project)
         db.session.commit()
@@ -67,11 +74,33 @@ def create():
     return render_template("projects/form.html", form=form, project=None)
 
 
+@bp.route("/reorder", methods=("POST",))
+@login_required
+def reorder():
+    payload = request.get_json()
+    project_ids = payload.get("project_ids") if isinstance(payload, dict) else None
+    if not isinstance(project_ids, list) or not all(
+        isinstance(project_id, int) and not isinstance(project_id, bool)
+        for project_id in project_ids
+    ):
+        return {"ok": False, "error": "Invalid project order."}, 400
+
+    projects = user_projects().all()
+    by_id = {project.id: project for project in projects}
+    if len(project_ids) != len(set(project_ids)) or set(project_ids) != set(by_id):
+        return {"ok": False, "error": "Invalid project order."}, 400
+
+    for position, project_id in enumerate(project_ids):
+        by_id[project_id].position = position
+    db.session.commit()
+    return {"ok": True}
+
+
 @bp.route("/<int:project_id>")
 @login_required
 def detail(project_id: int):
     project = project_or_404(project_id)
-    prepare_tasks(load_all_tasks(current_user.id))
+    prepare_tasks(user_id=current_user.id)
     roots = project.root_tasks.all()
     if session.get("hide_completed", False):
         roots = filter_task_tree(roots, hide_done=True)
@@ -137,9 +166,7 @@ def add_task(project_id: int):
         if task.project_id == project.id and task.parent_id is None:
             flash(f"{task.title!r} is already in this project.", "error")
         else:
-            moved = task.descendant_objects()
-            for item in moved:
-                item.project_id = project.id
+            moved = move_subtree(task, project.id)
             # A picked sub-task is promoted to a project root, otherwise it
             # would remain hidden under a parent in another project.
             if task.parent_id is not None:

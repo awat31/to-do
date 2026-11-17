@@ -8,8 +8,8 @@
   {% endif %}
 {% endmacro %}
 
-{% macro task_card(task, next_url=None, show_dates=true, default_date=None) %}
-<div class="task-card {{ 'is-done' if task.done }}" data-task-id="{{ task.id }}">
+{% macro task_card(task, next_url=None, show_dates=true, default_date=None, show_delete=false) %}
+<div class="task-card {{ 'is-done' if task.done }}">
   <form method="post" action="{{ url_for('tasks.toggle', task_id=task.id) }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
@@ -43,23 +43,41 @@
       {{ progress_bar(task.progress()) }}
     </div>
   </div>
-  <form method="post" action="{{ url_for('calendarview.quick_add_date', task_id=task.id) }}" class="inline-form quick-add">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-    <input type="date" name="date" class="input input-date-sm js-autosubmit" aria-label="Add work-on date"
-           value="{{ default_date.isoformat() if default_date else '' }}"
-           title="{{ 'Add ' ~ (default_date | human_date) if default_date else 'Add a work-on date' }}">
-    <button class="btn btn-sm btn-soft" type="submit" title="Add this work-on date">＋</button>
-  </form>
+  <div class="task-card-actions">
+    <form method="post" action="{{ url_for('calendarview.quick_add_date', task_id=task.id) }}" class="inline-form quick-add">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      <input type="date" name="date" class="input input-date-sm js-autosubmit" aria-label="Add work-on date"
+             value="{{ default_date.isoformat() if default_date else '' }}"
+             title="{{ 'Add ' ~ (default_date | human_date) if default_date else 'Add a work-on date' }}">
+      <button class="btn btn-sm btn-soft" type="submit" title="Add this work-on date">＋</button>
+    </form>
+    {% if show_delete %}
+      <form method="post" action="{{ url_for('tasks.delete', task_id=task.id) }}"
+            class="inline-form" data-confirm="Move this task and all of its sub-tasks to Trash?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+        <button class="btn btn-sm btn-ghost task-delete" type="submit"
+                aria-label="Move task to Trash" title="Move task to Trash">
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4h8v2"></path>
+            <path d="m19 6-1 14H6L5 6"></path>
+            <path d="M10 11v5m4-5v5"></path>
+          </svg>
+        </button>
+      </form>
+    {% endif %}
+  </div>
 </div>
 {% endmacro %}
 
-{% macro task_tree(tasks, next_url=None, depth=0) %}
+{% macro task_tree(tasks, next_url=None) %}
 <ul class="task-tree">
   {% for task in tasks recursive %}
   <li>
-    <div class="tree-row js-drag-row" draggable="true" data-task-id="{{ task.id }}">
-      <span class="drag-handle" title="Drag to reorder" aria-hidden="true">⠿</span>
+    <div class="tree-row">
       {{ task_card(task, next_url=next_url) }}
     </div>
     {% set kids = task._filtered_children if task._filtered_children is defined else (task._children_cache if task._children_cache is defined else task.children) %}

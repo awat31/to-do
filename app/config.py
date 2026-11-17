@@ -12,24 +12,34 @@ load_dotenv(find_dotenv(usecwd=True), override=False)
 
 
 def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "")
-    try:
-        return int(raw)
-    except ValueError:
+    raw = os.environ.get(name)
+    if raw is None:
         return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer.") from exc
+    if value <= 0:
+        raise RuntimeError(f"{name} must be a positive integer.")
+    return value
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
         return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off", ""}:
+        return False
+    raise RuntimeError(f"{name} must be a boolean value.")
 
 
 class Config:
     """Shared defaults. Secrets are injected by the app factory from the
     instance directory so they survive across environments."""
-    SECRET_KEY = os.environ.get("SECRET_KEY")
+    SECRET_KEY = os.environ.get("SECRET_KEY") or None
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {"pool_pre_ping": True}
     WTF_CSRF_ENABLED = True
@@ -45,6 +55,11 @@ class Config:
     REMEMBER_COOKIE_SAMESITE = "Lax"
     LOGIN_MAX_ATTEMPTS = _env_int("TODO_LOGIN_MAX_ATTEMPTS", 5)
     LOGIN_LOCK_MINUTES = _env_int("TODO_LOGIN_LOCK_MINUTES", 15)
+    # Per-IP throttles (per gunicorn worker): login attempts and signups.
+    LOGIN_IP_LIMIT = _env_int("TODO_LOGIN_IP_LIMIT", 20)
+    LOGIN_IP_WINDOW_MINUTES = _env_int("TODO_LOGIN_IP_WINDOW_MINUTES", 15)
+    SIGNUP_IP_LIMIT = _env_int("TODO_SIGNUP_IP_LIMIT", 5)
+    SIGNUP_IP_WINDOW_HOURS = _env_int("TODO_SIGNUP_IP_WINDOW_HOURS", 1)
     # Notes limits (characters) persisted by the autosave endpoints.
     TASK_NOTES_LIMIT = _env_int("TODO_TASK_NOTES_LIMIT", 100_000)
     PROJECT_NOTES_LIMIT = _env_int("TODO_PROJECT_NOTES_LIMIT", 200_000)
@@ -77,6 +92,11 @@ class TestingConfig(Config):
     WTF_CSRF_ENABLED = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     LOGIN_MAX_ATTEMPTS = 99  # tests intentionally exercise failed logins
+    # The in-process per-IP limiter is exercised by its own dedicated tests
+    # with a small limit; the shared test suite logs in many times from one
+    # client, so the default throttle is disabled here.
+    LOGIN_IP_LIMIT = 1_000_000
+    SIGNUP_IP_LIMIT = 1_000_000
 
 
 _CONFIGS = {
@@ -87,4 +107,10 @@ _CONFIGS = {
 
 
 def get_config_class():
-    return _CONFIGS.get(os.environ.get("FLASK_CONFIG", "production"), ProductionConfig)
+    name = os.environ.get("FLASK_CONFIG", "production")
+    try:
+        return _CONFIGS[name]
+    except KeyError as exc:
+        raise RuntimeError(
+            f"FLASK_CONFIG must be one of: {', '.join(_CONFIGS)}."
+        ) from exc

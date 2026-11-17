@@ -15,27 +15,28 @@
   </div>
 </div>
 
-{% if overdue or unscheduled %}
+{% if overdue %}
 <div class="stat-row">
   {% if overdue %}<a class="stat stat-alert" href="{{ url_for('tasks.scheduled') }}">{{ overdue }} overdue</a>{% endif %}
-  {% if unscheduled %}<a class="stat" href="{{ url_for('tasks.index') }}">{{ unscheduled }} open, unscheduled</a>{% endif %}
 </div>
 {% endif %}
 
-<section class="section">
-  <h2><span class="dot dot-due"></span>Due today <span class="count">{{ due_today | length }}</span></h2>
-  {% if due_today %}
-    {% for task in due_today %}{{ task_card(task, next_url=request.path, default_date=today) }}{% endfor %}
-  {% else %}<p class="empty">Nothing due today. <a href="{{ url_for('calendarview.view', kind='day') }}">Calendar →</a></p>{% endif %}
-</section>
+<div class="today-columns">
+  <section class="section">
+    <h2><span class="dot dot-work"></span>Working on today <span class="count">{{ work_today | length }}</span></h2>
+    {% for task in work_today %}
+      {{ task_card(task, next_url=request.path, default_date=today) }}
+    {% endfor %}
+    {% if not work_today %}<p class="empty">No work currently scheduled for today.</p>{% endif %}
+  </section>
 
-<section class="section">
-  <h2><span class="dot dot-work"></span>Working on today <span class="count">{{ work_today | length }}</span></h2>
-  {% for task in work_today %}
-    {{ task_card(task, next_url=request.path, default_date=today) }}
-  {% endfor %}
-  {% if not work_today %}<p class="empty">No work currently scheduled for today.</p>{% endif %}
-</section>
+  <section class="section">
+    <h2><span class="dot dot-due"></span>Due today <span class="count">{{ due_today | length }}</span></h2>
+    {% if due_today %}
+      {% for task in due_today %}{{ task_card(task, next_url=request.path, default_date=today) }}{% endfor %}
+    {% else %}<p class="empty">Nothing due today. <a href="{{ url_for('calendarview.view', kind='day') }}">Calendar →</a></p>{% endif %}
+  </section>
+</div>
 
 <section class="section">
   <h2>Rest of the week</h2>

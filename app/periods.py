@@ -6,6 +6,8 @@ same kind, so templates only deal with simple values.
 """
 import calendar as _calendar
 import datetime as dt
+
+from flask import current_app, has_app_context
 from zoneinfo import ZoneInfo
 
 KINDS = ("day", "week", "month", "year")
@@ -21,18 +23,9 @@ class BadPeriod(ValueError):
 
 
 def today() -> dt.date:
-    """Current date in the configured local timezone (default UTC).
-
-    Imported lazily so this module stays usable outside an app context
-    (period parsing tests, CLI scripts).
-    """
-    try:
-        from flask import current_app
-
-        tz = ZoneInfo(current_app.config.get("TIMEZONE", "UTC"))
-        return dt.datetime.now(tz).date()
-    except Exception:  # noqa: BLE001 - never break rendering over a bad timezone
-        return dt.date.today()
+    """Current date in the configured timezone, or UTC outside an app context."""
+    timezone = current_app.config.get("TIMEZONE", "UTC") if has_app_context() else "UTC"
+    return dt.datetime.now(ZoneInfo(timezone)).date()
 
 
 def parse_day(value: str) -> dt.date:
@@ -99,7 +92,7 @@ def period(kind: str, value: str | None = None) -> dict:
             prev, nxt = prev_month(start), next_month(start)
             granularity = "day"
         elif kind == "year":
-            start = dt.date(int(value), 1, 1)
+            start = parse_year(value)
             end = dt.date(int(value), 12, 31)
             label = str(start.year)
             prev, nxt = dt.date(start.year - 1, 1, 1), dt.date(start.year + 1, 1, 1)

@@ -53,15 +53,11 @@ def _sel_kwargs() -> dict:
     return out
 
 
-def _keyfn(kind: str):
-    return (lambda d: (d.month,)) if kind == "year" else (lambda d: (d,))
-
-
-def _breakdown(per_date: dict, keyfn) -> list:
+def _breakdown(per_date: dict, kind: str) -> list:
     """(group_key, [(date, tasks), ...]) sorted by group then date."""
     grouped: dict = {}
     for d, tasks in per_date.items():
-        grouped.setdefault(keyfn(d), {}).setdefault(d, []).extend(tasks)
+        grouped.setdefault(periods.group_key(kind, d), {}).setdefault(d, []).extend(tasks)
     return [(k, sorted(m.items())) for k, m in sorted(grouped.items())]
 
 
@@ -89,7 +85,6 @@ def view(kind: str, value: str | None):
         abort(404)
 
     due_sel, work_sel = _selection()
-    keyfn = _keyfn(kind)
     layout_mode = request.args.get("layout", "calendar")
     if layout_mode not in ("list", "calendar"):
         layout_mode = "calendar"
@@ -99,13 +94,13 @@ def view(kind: str, value: str | None):
 
     due_break = (
         _breakdown(
-            queries.due_groups(p["start"], p["end"], user_id=current_user.id), keyfn
+            queries.due_groups(p["start"], p["end"], user_id=current_user.id), kind
         )
         if due_sel else []
     )
     work_break = (
         _breakdown(
-            queries.work_groups(p["start"], p["end"], user_id=current_user.id), keyfn
+            queries.work_groups(p["start"], p["end"], user_id=current_user.id), kind
         )
         if work_sel else []
     )

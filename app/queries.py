@@ -31,7 +31,9 @@ def due_in(
     )
     if not include_done:
         query = query.filter(Task.done.is_(False))
-    return query.order_by(Task.due_date, Task.title).all()
+    # Task.id tiebreak keeps the ordering deterministic when two tasks share
+    # a due date and title.
+    return query.order_by(Task.due_date, Task.title, Task.id).all()
 
 
 def work_rows(
@@ -59,7 +61,7 @@ def work_rows(
         query = query.filter(Task.done.is_(False))
     return (
         query
-        .order_by(TaskDate.date, Task.title)
+        .order_by(TaskDate.date, Task.title, Task.id)
         .with_entities(Task, TaskDate.date)
         .all()
     )
@@ -188,57 +190,3 @@ def prepare_tasks(
         t._progress_version = version
 
     return all_tasks
-
-
-def build_forest(
-    all_tasks: list[Task],
-    *,
-    hide_done: bool = False,
-    predicate=None,
-    sort_key=None,
-) -> list[Task]:
-    """Turn prepared tasks into display roots, optionally filtered.
-
-    ``predicate`` selects matching tasks; their ancestors and descendants are
-    kept so the tree structure and context remain visible.
-    """
-    by_id = {t.id: t for t in all_tasks}
-    keep_ids = set(by_id)
-
-    if predicate is not None:
-        matching = {t.id for t in all_tasks if predicate(t)}
-        keep_ids = set(matching)
-        for task_id in list(matching):
-            node = by_id.get(task_id)
-            while node is not None and node.parent_id in by_id:
-                keep_ids.add(node.parent_id)
-                node = by_id.get(node.parent_id)
-            # A matching parent brings its subtree along.
-            node = by_id.get(task_id)
-            if node is not None:
-                stack = list(node._children_cache)
-                while stack:
-                    child = stack.pop()
-                    keep_ids.add(child.id)
-                    stack.extend(child._children_cache)
-
-    visible_children: dict[int, list[Task]] = {}
-    for t in all_tasks:
-        if t.id not in keep_ids:
-            continue
-        kids = [k for k in t._children_cache if k.id in keep_ids]
-        visible_children[t.id] = kids
-
-    def prune(task: Task) -> tuple[Task, list[Task]] | None:
-        kids = [prune(k) for k in visible_children.get(task.id, [])]
-        kids = [entry[0] for entry in kids if entry is not None]
-        if hide_done and task.done and not kids:
-            return None
-        task._filtered_children = kids
-        return (task, kids)
-
-    roots = [t for t in all_tasks if t.id in keep_ids and (t.parent_id is None or t.parent_id not in keep_ids)]
-    roots = [t for t in roots if prune(t) is not None]
-    if sort_key is None:
-        sort_key = lambda t: (t.done, t.due_date is None, t.due_date or dt.date.max, t.position, t.id)
-    return sorted(roots, key=sort_key)
