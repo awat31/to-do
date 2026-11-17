@@ -1672,7 +1672,7 @@ def test_user_can_update_highlight_colour_and_night_mode(logged_in):
     page = logged_in.get("/").data.decode()
     assert '<body class="night-mode"' in page
     assert "--accent: #123abc; --accent-text: #ffffff;" in page
-    assert '<meta name="theme-color" content="#0b1220">' in page
+    assert '<meta name="theme-color" content="#141414">' in page
 
     user = User.query.filter_by(username="admin").one()
     assert user.highlight_color == "#123abc"
