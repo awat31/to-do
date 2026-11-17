@@ -1,6 +1,7 @@
 """WTForms used across the app."""
 from flask import current_app
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileAllowed, FileField
 from wtforms import (
     BooleanField,
     DateField,
@@ -102,6 +103,14 @@ class TaskForm(FlaskForm):
             self.recurrence.errors.append("Give the task a due date to repeat it.")
             return False
         return ok
+
+
+class ImportTasksForm(FlaskForm):
+    """CSV bulk import: only a file is required; columns are mapped by header."""
+    file = FileField("CSV file", validators=(
+        DataRequired(message="Choose a CSV file to import."),
+        FileAllowed(("csv", "txt"), message="Please upload a .csv file."),
+    ))
 
 
 class WorkDateForm(FlaskForm):

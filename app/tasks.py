@@ -1,9 +1,13 @@
 """Task management: CRUD, recursive sub-tasks, due dates, work-on dates."""
+import csv
 import datetime as dt
+import io
 import json
+import re
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
@@ -22,6 +26,7 @@ from .access import batch_or_404, task_or_404, user_batches, user_projects, user
 from .forms import (
     DeleteForm,
     DueDateForm,
+    ImportTasksForm,
     QuickTaskForm,
     TaskForm,
     WorkDateForm,
@@ -473,6 +478,285 @@ def empty_trash():
     session.pop("last_deleted_batch", None)
     flash("Trash emptied.", "ok")
     return redirect(url_for("tasks.trash"))
+
+
+# --- CSV bulk import -------------------------------------------------------
+
+IMPORT_COLUMNS = ("title", "notes", "due_date", "work_dates", "project", "parent")
+MAX_IMPORT_ROWS = 5_000
+
+
+def _parse_import_date(raw: str) -> dt.date | None:
+    raw = (raw or "").strip()
+    return dt.date.fromisoformat(raw) if raw else None
+
+
+_RANGE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{4}-\d{2}-\d{2})$")
+
+
+def _expand_work_dates(raw: str) -> list[dt.date]:
+    """Comma-separated ISO dates and/or a-b inclusive ranges -> list of dates."""
+    dates: list[dt.date] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        match = _RANGE_RE.match(part)
+        if match:
+            start = dt.date.fromisoformat(match.group(1))
+            end = dt.date.fromisoformat(match.group(2))
+            if end < start:
+                raise ValueError(f"range end {end} is before start {start}")
+            while start <= end:
+                dates.append(start)
+                start += dt.timedelta(days=1)
+        else:
+            dates.append(dt.date.fromisoformat(part))
+    return dates
+
+
+def _parse_bool(raw: str, field: str) -> bool:
+    value = (raw or "").strip().lower()
+    if value in ("", "0", "false", "no", "n"):
+        return False
+    if value in ("1", "true", "yes", "y"):
+        return True
+    raise ValueError(f"{field} must be a boolean (true/false), got {raw!r}")
+
+
+def _import_rows(file_storage) -> tuple[list[dict], list[str]]:
+    """Parse an uploaded CSV into row dicts; returns (rows, errors).
+
+    The first row must be a header naming the columns (case-insensitive);
+    only 'title' is mandatory. Rows with problems are reported by line
+    number and skipped rather than failing the whole import.
+    """
+    errors: list[str] = []
+    try:
+        text = file_storage.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return [], ["The file is not valid UTF-8 text; export it as UTF-8 CSV."]
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return [], ["The file is empty."]
+    fieldnames = [(name or "").strip().lower() for name in reader.fieldnames]
+    if "title" not in fieldnames:
+        return [], ["The first row must be a header containing a 'title' column."]
+    reader.fieldnames = fieldnames
+
+    rows: list[dict] = []
+    for line, record in enumerate(reader, start=2):
+        if all(not (value or "").strip() for value in record.values()):
+            continue  # skip blank lines
+        title = (record.get("title") or "").strip()
+        if not title:
+            errors.append(f"Line {line}: missing title — row skipped.")
+            continue
+        if len(rows) >= MAX_IMPORT_ROWS:
+            errors.append(
+                f"Import limited to {MAX_IMPORT_ROWS} rows — the rest were ignored."
+            )
+            break
+        try:
+            work_raw = (record.get("work_dates") or "").strip()
+            # Strip a single leading quote added by the exporter's
+            # formula-injection guard so export -> import round-trips.
+            unquote = lambda v: v[1:] if v.startswith("'") else v
+            rows.append(
+                {
+                    "line": line,
+                    "title": unquote(title)[:255],
+                    "notes": unquote((record.get("notes") or "").strip()),
+                    "done": _parse_bool(record.get("done") or "", "done"),
+                    "due_date": _parse_import_date(record.get("due_date")),
+                    "work_dates": _expand_work_dates(work_raw) if work_raw else [],
+                    "project": unquote((record.get("project") or "").strip()),
+                    "parent": unquote((record.get("parent") or "").strip()),
+                }
+            )
+        except ValueError as exc:
+            errors.append(f"Line {line}: {exc} — row skipped.")
+    return rows, errors
+
+
+def _resolve_import_refs(rows: list[dict]) -> tuple[list[dict], list[str]]:
+    """Map project names and parent titles to ids; returns (rows, errors).
+
+    Parents are matched by title after all tasks are staged, so a child can
+    reference a task that appears later in the same file. Parent chains are
+    walked to reject cycles (a task cannot be nested under itself).
+    """
+    errors: list[str] = []
+    projects = {p.name.casefold(): p for p in user_projects().all()}
+
+    by_title: dict[str, list[dict]] = {}
+    for row in rows:
+        by_title.setdefault(row["title"].casefold(), []).append(row)
+
+    # First pass: stage tasks without parent links, keeping row order.
+    for row in rows:
+        project_name = row.pop("project")
+        if project_name:
+            project = projects.get(project_name.casefold())
+            if project is None:
+                errors.append(
+                    f"Line {row['line']}: no project named {project_name!r} — "
+                    "task imported without a project."
+                )
+            else:
+                row["project_id"] = project.id
+        row["task"] = Task(
+            user_id=current_user.id,
+            title=row["title"],
+            notes=row["notes"],
+            done=row["done"],
+            due_date=row["due_date"],
+            project_id=row.get("project_id"),
+        )
+
+    # Second pass: link parents by exact title (first matching other row wins);
+    # fall back to an existing task with that title.
+    for row in rows:
+        parent_name = row.pop("parent")
+        if not parent_name:
+            continue
+        candidates = [
+            other for other in by_title.get(parent_name.casefold(), [])
+            if other is not row
+        ]
+        if candidates:
+            row["parent_row"] = candidates[0]
+            continue
+        existing = user_tasks().filter(Task.title == parent_name).first()
+        if existing is not None:
+            row["existing_parent_id"] = existing.id
+        else:
+            errors.append(
+                f"Line {row['line']}: no task titled {parent_name!r} to "
+                "use as parent — task imported at top level."
+            )
+
+    # Reject parent chains that loop back to the task itself.
+    for row in rows:
+        seen, node = {id(row)}, row.get("parent_row")
+        while node is not None and id(node) not in seen:
+            seen.add(id(node))
+            node = node.get("parent_row")
+        if node is row:
+            row.pop("parent_row", None)
+            errors.append(
+                f"Line {row['line']}: parent links would form a cycle — "
+                "task imported at top level."
+            )
+    return rows, errors
+
+
+@bp.route("/import", methods=("GET", "POST"))
+@login_required
+def import_csv():
+    """Bulk-import tasks from an uploaded CSV file."""
+    form = ImportTasksForm()
+    if form.validate_on_submit():
+        rows, errors = _import_rows(form.file.data)
+        if rows:
+            rows, ref_errors = _resolve_import_refs(rows)
+            errors.extend(ref_errors)
+        if not rows:
+            for message in errors:
+                flash(message, "error")
+            return render_template("tasks/import.html", form=form), 400
+
+        # All validation passed: insert in one transaction, then link parents.
+        position_cache: dict[int | None, int] = {}
+        for row in rows:
+            task = row["task"]
+            project_id = row.get("project_id")
+            task.position = position_cache.get(project_id, 0)
+            position_cache[project_id] = task.position + 1
+            db.session.add(task)
+            db.session.flush()
+            for d in row["work_dates"]:
+                db.session.add(TaskDate(task_id=task.id, date=d))
+        for row in rows:
+            parent_row = row.pop("parent_row", None)
+            if parent_row is not None:
+                row["task"].parent_id = parent_row["task"].id
+            else:
+                existing_parent = row.pop("existing_parent_id", None)
+                if existing_parent is not None:
+                    row["task"].parent_id = existing_parent
+        db.session.commit()
+
+        created = len(rows)
+        summary = f"{created} task{'' if created == 1 else 's'} imported."
+        for message in errors:
+            flash(message, "error")
+        flash(summary, "ok")
+        return redirect(url_for("tasks.index"))
+    if form.is_submitted():
+        # A POST that failed field validation (e.g. no file attached).
+        flash_form_errors(form)
+        return render_template("tasks/import.html", form=form), 400
+    return render_template("tasks/import.html", form=form)
+
+
+# --- CSV export -------------------------------------------------------------
+
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """Neutralise spreadsheet formula injection in exported cells.
+
+    Cells that a spreadsheet would evaluate as a formula get a leading
+    single quote; the importer strips a single leading quote so a
+    round-trip export -> import preserves the original text.
+    """
+    if value.startswith(_FORMULA_PREFIXES) or value.startswith("'"):
+        return "'" + value
+    return value
+
+
+def _iso_dates(dates) -> str:
+    return ",".join(d.isoformat() for d in sorted(dates))
+
+
+@bp.route("/export")
+@login_required
+def export_csv():
+    """Export every task as CSV compatible with the importer."""
+    tasks = (
+        user_tasks()
+        .options(joinedload(Task.work_dates), joinedload(Task.project))
+        .order_by(Task.id)
+        .all()
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        ["title", "notes", "due_date", "work_dates", "project", "parent", "done"]
+    )
+    for task in tasks:
+        writer.writerow(
+            [
+                _csv_safe(task.title),
+                _csv_safe(task.notes),
+                task.due_date.isoformat() if task.due_date else "",
+                _iso_dates(td.date for td in task.work_dates),
+                task.project.name if task.project else "",
+                task.parent.title if task.parent else "",
+                "true" if task.done else "false",
+            ]
+        )
+    data = buffer.getvalue().encode("utf-8")
+    return Response(
+        data,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="tasks-export.csv"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @bp.route("/<int:task_id>/subtasks", methods=("POST",))

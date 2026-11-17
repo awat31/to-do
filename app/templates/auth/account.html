@@ -37,6 +37,12 @@
     <button class="btn btn-primary" type="submit">Save appearance</button>
   </form>
 
+  <div class="form-card auth-card">
+    <h2>Export your data</h2>
+    <a class="btn btn-soft" href="{{ url_for('tasks.export_csv') }}">Download tasks CSV</a>
+    <p class="hint">Download all of your tasks as a CSV file (compatible with the CSV importer, e.g. to copy them into another account).</p>
+  </div>
+
   <form method="post" class="stack form-card auth-card">
     {{ form.hidden_tag() }}
     <h2>Change password</h2>
