@@ -85,9 +85,9 @@ def view(kind: str, value: str | None):
         abort(404)
 
     due_sel, work_sel = _selection()
-    layout_mode = request.args.get("layout", "calendar")
+    layout_mode = request.args.get("layout", "list")
     if layout_mode not in ("list", "calendar"):
-        layout_mode = "calendar"
+        layout_mode = "list"
     if kind == "day":
         layout_mode = "list"
     hide = session.get("hide_completed", False)

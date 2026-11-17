@@ -15,7 +15,7 @@
   <div class="kind-tabs">
     {% for k in kinds | reverse %}
       <a class="kind-tab {{ 'active' if k == kind }}"
-         href="{{ url_for('calendarview.view', kind=k, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=('calendar' if kind == 'day' else layout_mode)) }}">{{ k | capitalize }}</a>
+         href="{{ url_for('calendarview.view', kind=k, due=(1 if due_sel else 0), work=(1 if work_sel else 0), layout=layout_mode) }}">{{ k | capitalize }}</a>
     {% endfor %}
   </div>
   <div class="period-nav">

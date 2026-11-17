@@ -1445,7 +1445,9 @@ def test_notes_rejects_bad_csrf_without_global_guard(app, logged_in):
 
 def test_month_view_renders_overview_grid(logged_in):
     _create_task(logged_in, title="Grid task", due="2026-03-03")
-    page = logged_in.get("/calendar/month/2026-03?due=1&work=0").data.decode()
+    page = logged_in.get(
+        "/calendar/month/2026-03?due=1&work=0&layout=calendar"
+    ).data.decode()
     assert 'class="month-grid"' in page
     assert "Grid task" in page
     assert "/calendar/day/2026-03-03?due=1&amp;work=0" in page
