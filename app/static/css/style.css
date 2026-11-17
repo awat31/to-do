@@ -47,13 +47,13 @@ body {
 }
 .night-mode {
   color-scheme: dark;
-  --bg: #0b1220;
-  --surface: #121c2d;
-  --surface-soft: #18253a;
-  --paper: #121c2d;
+  --bg: #141414;
+  --surface: #1e1e1e;
+  --surface-soft: #262626;
+  --paper: #1e1e1e;
   --ink: #f3f4f6;
-  --ink-soft: #cbd5e1;
-  --line: #334155;
+  --ink-soft: #cfcfcf;
+  --line: #3a3a3a;
   --due-ink: #f9a8d4;
   --work-ink: #67e8f9;
   --danger: #f87171;
@@ -67,7 +67,7 @@ body {
   --repeat-ink: #d8b4fe;
   --link: #93c5fd;
   --active-control: #e5e7eb;
-  --active-control-text: #0b1220;
+  --active-control-text: #141414;
   --accent-soft: color-mix(in srgb, var(--accent) 20%, var(--bg));
   --accent-line: color-mix(in srgb, var(--accent) 52%, var(--line));
   --due-soft: color-mix(in srgb, var(--due) 20%, var(--surface));
