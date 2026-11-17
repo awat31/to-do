@@ -7,6 +7,7 @@ import re
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
@@ -558,16 +559,19 @@ def _import_rows(file_storage) -> tuple[list[dict], list[str]]:
             break
         try:
             work_raw = (record.get("work_dates") or "").strip()
+            # Strip a single leading quote added by the exporter's
+            # formula-injection guard so export -> import round-trips.
+            unquote = lambda v: v[1:] if v.startswith("'") else v
             rows.append(
                 {
                     "line": line,
-                    "title": title[:255],
-                    "notes": (record.get("notes") or "").strip(),
+                    "title": unquote(title)[:255],
+                    "notes": unquote((record.get("notes") or "").strip()),
                     "done": _parse_bool(record.get("done") or "", "done"),
                     "due_date": _parse_import_date(record.get("due_date")),
                     "work_dates": _expand_work_dates(work_raw) if work_raw else [],
-                    "project": (record.get("project") or "").strip(),
-                    "parent": (record.get("parent") or "").strip(),
+                    "project": unquote((record.get("project") or "").strip()),
+                    "parent": unquote((record.get("parent") or "").strip()),
                 }
             )
         except ValueError as exc:
@@ -694,6 +698,65 @@ def import_csv():
         flash_form_errors(form)
         return render_template("tasks/import.html", form=form), 400
     return render_template("tasks/import.html", form=form)
+
+
+# --- CSV export -------------------------------------------------------------
+
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """Neutralise spreadsheet formula injection in exported cells.
+
+    Cells that a spreadsheet would evaluate as a formula get a leading
+    single quote; the importer strips a single leading quote so a
+    round-trip export -> import preserves the original text.
+    """
+    if value.startswith(_FORMULA_PREFIXES) or value.startswith("'"):
+        return "'" + value
+    return value
+
+
+def _iso_dates(dates) -> str:
+    return ",".join(d.isoformat() for d in sorted(dates))
+
+
+@bp.route("/export")
+@login_required
+def export_csv():
+    """Export every task as CSV compatible with the importer."""
+    tasks = (
+        user_tasks()
+        .options(joinedload(Task.work_dates), joinedload(Task.project))
+        .order_by(Task.id)
+        .all()
+    )
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        ["title", "notes", "due_date", "work_dates", "project", "parent", "done"]
+    )
+    for task in tasks:
+        writer.writerow(
+            [
+                _csv_safe(task.title),
+                _csv_safe(task.notes),
+                task.due_date.isoformat() if task.due_date else "",
+                _iso_dates(td.date for td in task.work_dates),
+                task.project.name if task.project else "",
+                task.parent.title if task.parent else "",
+                "true" if task.done else "false",
+            ]
+        )
+    data = buffer.getvalue().encode("utf-8")
+    return Response(
+        data,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="tasks-export.csv"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @bp.route("/<int:task_id>/subtasks", methods=("POST",))

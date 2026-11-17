@@ -2547,3 +2547,92 @@ def test_import_done_accepts_word_variants(logged_in):
     assert resp.status_code == 200
     assert Task.query.filter_by(title="Yes task").one().done
     assert not Task.query.filter_by(title="No task").one().done
+
+
+# --- CSV export -------------------------------------------------------------
+
+def test_export_csv_contains_tasks(logged_in):
+    _create_task(logged_in, title="Exported task", due="2026-05-01")
+    logged_in.post("/projects/new", data={"name": "Work", "color": "blue"})
+    from app.models import Project
+    project = Project.query.filter_by(name="Work").one()
+    _create_task(logged_in, title="Project task", project=project.id)
+
+    resp = logged_in.get("/tasks/export")
+    assert resp.status_code == 200
+    assert resp.mimetype == "text/csv"
+    assert "attachment" in resp.headers["Content-Disposition"]
+    body = resp.data.decode("utf-8")
+    assert "Exported task" in body
+    assert "2026-05-01" in body
+    assert "Work" in body
+
+
+def test_export_requires_login(client):
+    resp = client.get("/tasks/export")
+    assert resp.status_code == 302
+
+
+def test_export_is_formula_safe(logged_in):
+    _create_task(logged_in, title='=HYPERLINK("http://evil")')
+    resp = logged_in.get("/tasks/export")
+    body = resp.data.decode("utf-8")
+    # The dangerous cell is exported with a protective leading quote.
+    assert "'=HYPERLINK" in body
+
+
+def test_export_import_round_trip(logged_in):
+    from app.models import DeletedBatch, Task, TaskDate
+    logged_in.post("/projects/new", data={"name": "Round", "color": "blue"})
+    from app.models import Project
+    project = Project.query.filter_by(name="Round").one()
+    parent = _create_task(logged_in, title="Round parent", due="2026-06-01")
+    child = _create_task(
+        logged_in, title="Round child", project=project.id, parent=parent.id
+    )
+    logged_in.post(
+        f"/tasks/{child.id}/work-dates",
+        data={"start": "2026-06-02", "end": "2026-06-03"},
+    )
+    _create_task(logged_in, title="=dangerous")
+
+    resp = logged_in.get("/tasks/export")
+    csv_text = resp.data.decode("utf-8")
+
+    # Wipe and re-import.
+    TaskDate.query.delete()
+    Task.query.delete()
+    DeletedBatch.query.delete()
+    db.session.commit()
+    assert Task.query.count() == 0
+
+    resp = _import_csv(logged_in, csv_text)
+    assert resp.status_code == 200
+    page = resp.data.decode()
+    assert "imported" in page
+
+    new_parent = Task.query.filter_by(title="Round parent").one()
+    new_child = Task.query.filter_by(title="Round child").one()
+    assert new_child.parent_id == new_parent.id
+    assert new_child.project.name == "Round"
+    assert new_parent.due_date.isoformat() == "2026-06-01"
+    dates = sorted(
+        td.date.isoformat() for td in TaskDate.query.filter_by(task_id=new_child.id)
+    )
+    assert dates == ["2026-06-02", "2026-06-03"]
+    assert Task.query.filter_by(title="=dangerous").count() == 1
+
+
+def test_export_only_own_tasks(logged_in, app):
+    from app.models import User
+    bob = User(username="bob")
+    bob.set_password("bob-password-123")
+    db.session.add(bob)
+    db.session.commit()
+    _create_task(logged_in, title="Mine only")
+
+    bob_client = app.test_client()
+    bob_client.post("/login", data={"username": "bob", "password": "bob-password-123"})
+    resp = bob_client.get("/tasks/export")
+    body = resp.data.decode("utf-8")
+    assert "Mine only" not in body
