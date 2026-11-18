@@ -8,7 +8,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro task_card(task, next_url=None, show_dates=true, default_date=None, show_delete=false) %}
+{% macro task_card(task, next_url=None, show_dates=true, default_date=None, show_delete=false, show_work_dates=true) %}
 <div class="task-card {{ 'is-done' if task.done }}">
   <form method="post" action="{{ url_for('tasks.toggle', task_id=task.id) }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -31,7 +31,7 @@
       {% if show_dates and task.due_date %}
         <span class="chip chip-due {{ 'chip-overdue' if not task.done and task.due_date < today }}">due {{ task.due_date | human_date_short }}</span>
       {% endif %}
-      {% if show_dates and task.work_dates %}
+      {% if show_dates and show_work_dates and task.work_dates %}
         {% for td in task.work_dates[:4] %}
           <span class="chip chip-work">work {{ td.date | human_date_short }}</span>
         {% endfor %}

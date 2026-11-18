@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Import tasks · To-Do{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Import tasks from CSV</h1>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="stack form-card">
+  {{ form.hidden_tag() }}
+  <div class="field">
+    {{ form.file.label }} {{ form.file(class="input", accept=".csv,text/csv") }}
+    {% for e in form.file.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Import</button>
+    <a class="btn btn-ghost" href="{{ url_for('tasks.index') }}">Cancel</a>
+  </div>
+</form>
+
+<div class="form-card">
+  <h2>CSV format</h2>
+  <p class="hint">
+    The first row must be a header naming the columns (order doesn't matter).
+    Only <code>title</code> is required; all other columns are optional.
+    Dates use <code>YYYY-MM-DD</code>.
+  </p>
+  <table class="import-help">
+    <thead>
+      <tr><th>Column</th><th>Required</th><th>Meaning</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>title</code></td><td>yes</td><td>Task name (up to 255 characters)</td></tr>
+      <tr><td><code>notes</code></td><td>no</td><td>Free-text details</td></tr>
+      <tr><td><code>done</code></td><td>no</td><td><code>true</code>/<code>false</code> — mark the task as completed</td></tr>
+      <tr><td><code>due_date</code></td><td>no</td><td>A single date, e.g. <code>2026-03-03</code></td></tr>
+      <tr><td><code>work_dates</code></td><td>no</td><td>Comma-separated dates or inclusive ranges, e.g. <code>2026-03-01,2026-03-03-2026-03-05</code></td></tr>
+      <tr><td><code>project</code></td><td>no</td><td>Name of one of your existing projects</td></tr>
+      <tr><td><code>parent</code></td><td>no</td><td>Title of another task (from this file or already in the app) to nest under</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Example:</p>
+  <pre class="import-example">title,due_date,work_dates,project,parent
+"Plan holiday",2026-07-01,,Personal,
+"Book flights",2026-07-10,2026-07-02,Personal,Plan holiday
+"Renew passport",,2026-03-01-2026-03-03,Personal,Plan holiday</pre>
+  <p class="hint">
+    Rows with problems (bad dates, unknown projects or parents) are skipped and
+    reported; everything else is imported. Duplicate titles are allowed — parent
+    links use the first matching row that isn't the task itself.
+  </p>
+</div>
+{% endblock %}
