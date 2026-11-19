@@ -1,8 +1,9 @@
 {% macro progress_bar(progress) %}
   {% if progress %}
     {% set done, total = progress %}
+    {% set pct = ((done / total * 100) | round | int) if total else 0 %}
     <span class="progress" title="{{ done }} of {{ total }} sub-tasks done">
-      <span class="progress-fill" style="width: {{ (done / total * 100) | round | int }}%"></span>
+      <span class="progress-fill" style="--w: {{ pct }}%"></span>
     </span>
     <span class="progress-label">{{ done }}/{{ total }}</span>
   {% endif %}

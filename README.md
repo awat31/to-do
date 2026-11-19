@@ -1,16 +1,17 @@
 # To-Do
 
-An open-soruce Flask task manager with projects, nested tasks, flexible work schedules,
+An open-source Flask task manager with projects, nested tasks, flexible work schedules,
 recurring tasks, trash and undo, and day / week / month / year calendars.
 Accounts have private tasks, projects, schedules, and trash; usernames are
 case-insensitive, and ownership is enforced in both route queries and database
 constraints.
 
-Run locally on your infrastructure. Designed to be run on Ubuntu. Run in WSL or 
+Run locally on your infrastructure. Designed to be run on Ubuntu. Run in WSL or
 an LXC container.
 
-Bases tasks on due date. Group by projects. All tasks for a given day are available
-in that respective week, month, and year. Gives a time-oriented task management.
+Tasks are based on their due date and grouped by project. All tasks for a given
+day are available in that day's respective week, month, and year, giving a
+time-oriented task management approach.
 
 Yes, it's vibe coded. But that doesn't mean it's not useful.
 
@@ -34,7 +35,7 @@ Yes, it's vibe coded. But that doesn't mean it's not useful.
 - **Trash and undo** — deleting a task snapshots its subtree. Restore from the
   undo bar or Trash, or permanently delete it. On deletion, batches beyond the
   newest 20 and batches older than 30 days are pruned.
-- **Accounts** — open registration, private user data, password changes, and
+- **Accounts** — open registration, private user data, password changes,
   customizable display names and appearance settings (highlight colour and
   Night mode), and self-service deletion for every account
   except the built-in `admin`. Admins can view and delete users, grant or revoke
@@ -225,26 +226,26 @@ interface.
 Set options in `.env` or the service environment. `.env.example` lists the
 commonly used settings.
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `FLASK_CONFIG` | `production` | Select `production`, `development`, or `testing` app settings. |
-| `BIND` | `0.0.0.0:8000` | Gunicorn listen address. |
-| `WEB_CONCURRENCY` | Calculated from CPU count | Gunicorn worker count. |
-| `THREADS` | `2` | Threads per Gunicorn worker. |
-| `GUNICORN_TIMEOUT` | `60` | Worker timeout in seconds. |
-| `FORWARDED_ALLOW_IPS` | `127.0.0.1,::1` | Trusted proxy addresses allowed to set forwarded headers. |
-| `TODO_ADMIN_PASSWORD` | Generated | Initial `admin` password, used only when the database has no users. |
-| `TODO_DATABASE` | `instance/todo.sqlite3` | SQLAlchemy database URL. |
-| `SECRET_KEY` | Generated in `instance/secret_key` | Session and CSRF signing key. |
-| `TODO_TIMEZONE` | `UTC` | IANA timezone used for "today" and date defaults. |
-| `TODO_SSL_CERTFILE` | Unset | Gunicorn TLS certificate/full-chain PEM; set with `TODO_SSL_KEYFILE`. |
-| `TODO_SSL_KEYFILE` | Unset | Gunicorn TLS private-key PEM; set with `TODO_SSL_CERTFILE`. |
-| `TODO_SECURE_COOKIES` | Off | Set to `1` when the browser-facing connection uses HTTPS. |
-| `TODO_TRUSTED_HOSTS` | Unset | Optional comma-separated host allow-list. |
-| `TODO_LOGIN_MAX_ATTEMPTS` | `5` | Failed logins before account lockout. |
-| `TODO_LOGIN_LOCK_MINUTES` | `15` | Duration of login lockout. |
-| `TODO_TASK_NOTES_LIMIT` | `100000` | Maximum task-note characters. |
-| `TODO_PROJECT_NOTES_LIMIT` | `200000` | Maximum project-note characters. |
+| Variable                   | Default                            | Purpose                                                                  |
+|----------------------------|------------------------------------|--------------------------------------------------------------------------|
+| `FLASK_CONFIG`             | `production`                       | Select `production`, `development`, or `testing` app settings.           |
+| `BIND`                     | `0.0.0.0:8000`                     | Gunicorn listen address.                                                 |
+| `WEB_CONCURRENCY`          | Calculated from CPU count          | Gunicorn worker count.                                                   |
+| `THREADS`                  | `2`                                | Threads per Gunicorn worker.                                             |
+| `GUNICORN_TIMEOUT`         | `60`                               | Worker timeout in seconds.                                               |
+| `FORWARDED_ALLOW_IPS`      | `127.0.0.1,::1`                    | Trusted proxy addresses allowed to set forwarded headers.                |
+| `TODO_ADMIN_PASSWORD`      | Generated                          | Initial `admin` password, used only when the database has no users.      |
+| `TODO_DATABASE`            | `instance/todo.sqlite3`            | SQLAlchemy database URL.                                                 |
+| `SECRET_KEY`               | Generated in `instance/secret_key` | Session and CSRF signing key.                                            |
+| `TODO_TIMEZONE`            | `UTC`                              | IANA timezone used for "today" and date defaults.                        |
+| `TODO_SSL_CERTFILE`        | Unset                              | Gunicorn TLS certificate/full-chain PEM; set with `TODO_SSL_KEYFILE`.    |
+| `TODO_SSL_KEYFILE`         | Unset                              | Gunicorn TLS private-key PEM; set with `TODO_SSL_CERTFILE`.              |
+| `TODO_SECURE_COOKIES`      | Off                                | Set to `1` when the browser-facing connection uses HTTPS.                |
+| `TODO_TRUSTED_HOSTS`       | Unset                              | Optional comma-separated host allow-list.                                |
+| `TODO_LOGIN_MAX_ATTEMPTS`  | `5`                                | Failed logins before account lockout.                                    |
+| `TODO_LOGIN_LOCK_MINUTES`  | `15`                               | Duration of login lockout.                                               |
+| `TODO_TASK_NOTES_LIMIT`    | `100000`                           | Maximum task-note characters.                                            |
+| `TODO_PROJECT_NOTES_LIMIT` | `200000`                           | Maximum project-note characters.                                         |
 
 Notes are stored as plain text and are not rendered as Markdown.
 
