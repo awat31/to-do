@@ -284,7 +284,7 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   width: 56px; height: 7px; border-radius: 999px; background: var(--line);
   overflow: hidden; display: inline-block; vertical-align: middle;
 }
-.progress-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--work), var(--ok)); }
+.progress-fill { display: block; height: 100%; width: var(--w, 0%); background: linear-gradient(90deg, var(--work), var(--ok)); }
 .progress-label { font-size: 0.7rem; color: var(--ink-soft); }
 .quick-add { opacity: 0.35; transition: opacity 0.15s; }
 .task-card:hover .quick-add { opacity: 1; }
