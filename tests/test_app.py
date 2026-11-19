@@ -2636,3 +2636,138 @@ def test_export_only_own_tasks(logged_in, app):
     resp = bob_client.get("/tasks/export")
     body = resp.data.decode("utf-8")
     assert "Mine only" not in body
+
+
+# --- project completion -----------------------------------------------------
+
+def _token_from(client, url="/projects/"):
+    return _token(client.get(url).data.decode())
+
+
+def test_project_complete_and_reopen(logged_in):
+    from app.models import Project
+    logged_in.post("/projects/new", data={"name": "Finisher", "color": "blue"})
+    project = Project.query.filter_by(name="Finisher").one()
+    token = _token_from(logged_in, "/projects")
+
+    resp = logged_in.post(
+        f"/projects/{project.id}/toggle-completed",
+        data={"csrf_token": token, "next": "/projects/"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    db.session.refresh(project)
+    assert project.completed
+
+    resp = logged_in.post(
+        f"/projects/{project.id}/toggle-completed",
+        data={"csrf_token": token, "next": "/projects/"},
+        follow_redirects=True,
+    )
+    db.session.refresh(project)
+    assert not project.completed
+
+
+def test_completed_projects_hidden_until_toggle(logged_in):
+    from app.models import Project
+    logged_in.post("/projects/new", data={"name": "Open one", "color": "blue"})
+    logged_in.post("/projects/new", data={"name": "Done one", "color": "pink"})
+    done = Project.query.filter_by(name="Done one").one()
+    token = _token_from(logged_in, "/projects")
+    logged_in.post(
+        f"/projects/{done.id}/toggle-completed",
+        data={"csrf_token": token, "next": "/projects/"},
+        follow_redirects=True,
+    )
+
+    page = logged_in.get("/projects/").data.decode()
+    assert "Open one" in page
+    assert "Done one" not in page
+    assert "Completed projects" not in page
+
+    # Toggle the slider on.
+    logged_in.post(
+        "/projects/preferences/show-completed",
+        data={"show": "1", "next": "/projects/"},
+    )
+    page = logged_in.get("/projects/").data.decode()
+    assert "Completed projects" in page
+    assert "Done one" in page
+    assert "Open one" in page
+
+    # Toggle it back off.
+    logged_in.post(
+        "/projects/preferences/show-completed",
+        data={"next": "/projects/"},
+    )
+    page = logged_in.get("/projects/").data.decode()
+    assert "Done one" not in page
+
+
+def test_completed_project_ownership_isolated(logged_in, app):
+    from app.models import Project, User
+    bob = User(username="bob2")
+    bob.set_password("bob-password-123")
+    db.session.add(bob)
+    db.session.commit()
+    logged_in.post("/projects/new", data={"name": "Admin secret project", "color": "blue"})
+    admin_project = Project.query.filter_by(name="Admin secret project").one()
+
+    bob_client = app.test_client()
+    bob_client.post("/login", data={"username": "bob2", "password": "bob-password-123"})
+
+    # Bob cannot toggle someone else's project.
+    token = _token_from(bob_client, "/projects")
+    resp = bob_client.post(
+        f"/projects/{admin_project.id}/toggle-completed",
+        data={"csrf_token": token, "next": "/projects/"},
+    )
+    assert resp.status_code == 404
+    db.session.refresh(admin_project)
+    assert not admin_project.completed
+
+    # Admin completes their own project; bob still cannot see it.
+    token = _token_from(logged_in, "/projects")
+    logged_in.post(
+        f"/projects/{admin_project.id}/toggle-completed",
+        data={"csrf_token": token, "next": "/projects/"},
+    )
+    bob_client.post(
+        "/projects/preferences/show-completed",
+        data={"show": "1", "next": "/projects/"},
+    )
+    page = bob_client.get("/projects/").data.decode()
+    assert "Admin secret project" not in page
+
+
+def test_project_detail_shows_completed_state(logged_in):
+    from app.models import Project
+    logged_in.post("/projects/new", data={"name": "Detailed", "color": "blue"})
+    project = Project.query.filter_by(name="Detailed").one()
+    token = _token_from(logged_in, "/projects")
+    logged_in.post(
+        f"/projects/{project.id}/toggle-completed",
+        data={"csrf_token": token, "next": f"/projects/{project.id}"},
+    )
+    page = logged_in.get(f"/projects/{project.id}").data.decode()
+    assert "Detailed" in page  # completed projects remain viewable
+
+
+def test_project_detail_has_complete_button(logged_in):
+    from app.models import Project
+    logged_in.post("/projects/new", data={"name": "Buttoned", "color": "blue"})
+    project = Project.query.filter_by(name="Buttoned").one()
+
+    page = logged_in.get(f"/projects/{project.id}").data.decode()
+    assert "Complete project" in page
+    assert "Reopen project" not in page
+
+    token = _token_from(logged_in, "/projects/")
+    logged_in.post(
+        f"/projects/{project.id}/toggle-completed",
+        data={"csrf_token": token, "next": f"/projects/{project.id}"},
+        follow_redirects=True,
+    )
+    page = logged_in.get(f"/projects/{project.id}").data.decode()
+    assert "Reopen project" in page
+    assert "Complete project" not in page

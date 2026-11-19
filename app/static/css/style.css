@@ -548,6 +548,12 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
 
+/* ---- completed projects ---- */
+.project-card.is-completed { opacity: 0.6; }
+.project-card.is-completed .project-name { text-decoration: line-through; }
+.project-complete-form { margin-top: auto; padding-top: 0.3rem; align-self: flex-end; }
+.completed-projects { margin-top: 1.5rem; }
+
 /* ---- CSV import ---- */
 .import-help {
   width: 100%; border-collapse: collapse; margin: 0.5rem 0;

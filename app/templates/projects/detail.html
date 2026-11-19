@@ -7,10 +7,14 @@
   <h1 class="project-title">
     <span class="project-swatch" style="--chip: {{ color_hex(project.color) }}"></span>
     {{ project.name }}
-    <span class="count">{{ project.task_count }} task{{ '' if project.task_count == 1 else 's' }}</span>
   </h1>
   <div class="head-actions">
     {{ hide_completed_toggle(request.path) }}
+    <form method="post" action="{{ url_for('projects.toggle_completed', project_id=project.id) }}" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button class="btn btn-soft" type="submit">{{ 'Reopen project' if project.completed else 'Complete project' }}</button>
+    </form>
     <a class="btn btn-soft" href="{{ url_for('projects.edit', project_id=project.id) }}">Edit</a>
     <form method="post" action="{{ url_for('projects.delete', project_id=project.id) }}" class="inline-form">
       {{ delete_form.hidden_tag() }}
