@@ -129,6 +129,7 @@ def prepare_tasks(
     tasks: list[Task] | None = None,
     *,
     user_id: int | None = None,
+    done_last: bool = False,
 ) -> list[Task]:
     """Attach child lists, breadcrumbs and progress to every task.
 
@@ -136,6 +137,8 @@ def prepare_tasks(
     per-card query. A caller that already ran ``load_all_tasks(user_id)`` can
     pass the result in to avoid loading the same rows twice. When loading
     here, ``user_id`` is mandatory so another user's tree cannot leak in.
+    With ``done_last`` the children of each task are ordered with open
+    tasks first and completed ones at the bottom.
     """
     if tasks is None:
         if user_id is None:
@@ -148,8 +151,12 @@ def prepare_tasks(
     for t in all_tasks:
         if t.parent_id is not None:
             children[t.parent_id].append(t)
-    for kids in children.values():
-        kids.sort(key=lambda t: (t.position, t.id))
+    if done_last:
+        for kids in children.values():
+            kids.sort(key=lambda t: (t.done, t.position, t.id))
+    else:
+        for kids in children.values():
+            kids.sort(key=lambda t: (t.position, t.id))
 
     for t in all_tasks:
         t._children_cache = children.get(t.id, [])

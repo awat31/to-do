@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import task_tree with context %}
+{% from "_macros.html" import task_card with context %}
 {% from "_prefs.html" import hide_completed_toggle with context %}
 {% block title %}{{ project.name }} · To-Do{% endblock %}
 {% block content %}
@@ -35,7 +35,11 @@
     <section class="section">
       <h2>Tasks</h2>
       {% if roots %}
-        {{ task_tree(roots) }}
+        <ul class="task-tree task-list">
+          {% for task in roots %}
+            <li><div class="tree-row">{{ task_card(task, show_delete=true) }}</div></li>
+          {% endfor %}
+        </ul>
       {% else %}
         <p class="empty">No tasks assigned to this project yet.</p>
       {% endif %}

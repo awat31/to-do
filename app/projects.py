@@ -113,9 +113,11 @@ def reorder():
 @login_required
 def detail(project_id: int):
     project = project_or_404(project_id)
-    prepare_tasks(user_id=current_user.id)
+    hide_completed = session.get("hide_completed", False)
+    # When completed tasks are visible, sort them below the open ones.
+    prepare_tasks(user_id=current_user.id, done_last=not hide_completed)
     roots = project.root_tasks.all()
-    if session.get("hide_completed", False):
+    if hide_completed:
         roots = filter_task_tree(roots, hide_done=True)
     return render_template(
         "projects/detail.html",
