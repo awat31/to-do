@@ -19,7 +19,7 @@ from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
 from .queries import filter_task_tree, prepare_tasks
-from .utils import csrf_valid, flash_form_errors, notes_payload
+from .utils import csrf_valid, flash_form_errors, notes_payload, redirect_back
 
 bp = Blueprint("projects", __name__, url_prefix="/projects")
 
@@ -27,11 +27,11 @@ bp = Blueprint("projects", __name__, url_prefix="/projects")
 @bp.route("/")
 @login_required
 def index():
-    projects = (
-        user_projects()
-        .order_by(Project.position, Project.name, Project.id)
-        .all()
-    )
+    show_completed = session.get("show_completed_projects", False)
+    query = user_projects().order_by(Project.position, Project.name, Project.id)
+    all_projects = query.all()
+    projects = [p for p in all_projects if not p.completed]
+    completed = [p for p in all_projects if p.completed] if show_completed else []
     counts = dict(
         db.session.query(Task.project_id, func.count(Task.id))
         .filter(
@@ -42,8 +42,21 @@ def index():
         .all()
     )
     return render_template(
-        "projects/index.html", projects=projects, counts=counts, delete_form=DeleteForm()
+        "projects/index.html",
+        projects=projects,
+        completed=completed,
+        counts=counts,
+        delete_form=DeleteForm(),
+        show_completed=show_completed,
     )
+
+
+@bp.route("/preferences/show-completed", methods=("POST",))
+@login_required
+def set_show_completed():
+    """Toggle the 'show completed projects' preference (stored in session)."""
+    session["show_completed_projects"] = request.form.get("show") == "1"
+    return redirect_back(request.form.get("next"), url_for(".index"))
 
 
 def _color_choices():
@@ -126,6 +139,22 @@ def edit(project_id: int):
         flash("Project updated.", "ok")
         return redirect(url_for("projects.detail", project_id=project.id))
     return render_template("projects/form.html", form=form, project=project)
+
+
+@bp.route("/<int:project_id>/toggle-completed", methods=("POST",))
+@login_required
+def toggle_completed(project_id: int):
+    """Mark a project as completed, or reopen it."""
+    project = project_or_404(project_id)
+    project.completed = not project.completed
+    db.session.commit()
+    if project.completed:
+        flash(f"Project {project.name!r} marked as completed.", "ok")
+    else:
+        flash(f"Project {project.name!r} reopened.", "ok")
+    return redirect_back(
+        request.form.get("next"), url_for("projects.detail", project_id=project.id)
+    )
 
 
 @bp.route("/<int:project_id>/delete", methods=("POST",))

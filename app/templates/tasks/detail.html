@@ -11,6 +11,11 @@
     {% endif %}
   </h1>
   <div class="head-actions">
+    <form method="post" action="{{ url_for('tasks.toggle', task_id=task.id) }}" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <button class="btn btn-soft" type="submit">{{ 'Reopen task' if task.done else 'Complete task' }}</button>
+    </form>
     <a class="btn btn-soft" href="{{ url_for('tasks.edit', task_id=task.id) }}">Edit</a>
     <form method="post" action="{{ url_for('tasks.delete', task_id=task.id) }}" class="inline-form">
       {{ delete_form.hidden_tag() }}
@@ -19,17 +24,11 @@
   </div>
 </div>
 
-{% if ancestors %}
-<div class="crumbs big-crumbs">
-  {% for a in ancestors %}<a href="{{ url_for('tasks.detail', task_id=a.id) }}">{{ a.title }}</a>{% if not loop.last %} ›{% endif %}{% endfor %}
-</div>
-{% endif %}
-
 <div class="detail-grid">
   <div class="detail-main">
-    <section class="section">
+    <section class="section notebook">
       <h2>Notes</h2>
-      <textarea id="task-notes" class="input notes-editor" rows="8" placeholder="General information about this task…">{{ task.notes }}</textarea>
+      <textarea id="task-notes" class="input notes-editor notebook-editor" rows="8" placeholder="General information about this task…">{{ task.notes }}</textarea>
       <span class="save-status" id="task-notes-status"></span>
     </section>
 
@@ -49,27 +48,43 @@
   </div>
 
   <aside class="detail-side">
-    {% if task.project %}
-    <section class="section side-card">
-      <h2>Project</h2>
-      <a class="chip chip-lg" style="--chip: {{ color_hex(task.project.color) }}"
-         href="{{ url_for('projects.detail', project_id=task.project.id) }}">{{ task.project.name }}</a>
-    </section>
-    {% endif %}
-
-    <section class="section side-card">
-      <h2>Due date</h2>
-      <form method="post" action="{{ url_for('tasks.set_due', task_id=task.id) }}" class="stack">
-        {{ due_form.hidden_tag() }}
-        <div class="field-row">
-          {{ due_form.due_date(class="input input-date") }}
-          <button class="btn btn-soft" type="submit">Set</button>
+    <section class="section side-card detail-pane">
+      <h2>Details</h2>
+      <div class="detail-rows">
+        <div class="detail-row">
+          <span class="detail-key">Project</span>
+          <span class="detail-value">
+            {% if task.project %}
+              <a class="chip" style="--chip: {{ color_hex(task.project.color) }}"
+                 href="{{ url_for('projects.detail', project_id=task.project.id) }}">{{ task.project.name }}</a>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </span>
         </div>
-      </form>
-    </section>
+        <div class="detail-row">
+          <span class="detail-key">Parent task</span>
+          <span class="detail-value">
+            {% if task.parent %}
+              <a class="chip chip-parent" href="{{ url_for('tasks.detail', task_id=task.parent.id) }}">{{ task.parent.title }}</a>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-key">Due date</span>
+          <span class="detail-value">
+            <form method="post" action="{{ url_for('tasks.set_due', task_id=task.id) }}" class="field-row">
+              {{ due_form.hidden_tag() }}
+              {{ due_form.due_date(class="input input-date") }}
+              <button class="btn btn-soft btn-sm" type="submit">Set</button>
+            </form>
+          </span>
+        </div>
+      </div>
 
-    <section class="section side-card">
-      <h2>Work on dates <span class="count">{{ task.work_dates | length }}</span></h2>
+      <h2>Work on dates</h2>
       {% if task.work_dates %}
         <ul class="date-list">
           {% for td in task.work_dates %}
@@ -95,12 +110,8 @@
           <label class="lbl">…or a range (optional end)</label>
           {{ work_form.end(class="input input-date") }}
         </div>
-        <button class="btn btn-primary" type="submit">Add work date(s)</button>
+        <button class="btn btn-soft" type="submit">Add work date(s)</button>
       </form>
-      <p class="hint">Tip: add several separate dates one at a time for a non-consecutive schedule. Use the calendar cards' ＋ box to add dates from anywhere.</p>
-    </section>
-
-    <section class="section side-card">
       <h2>Sub-tree actions</h2>
       <div class="subtree-actions">
         <form method="post" action="{{ url_for('tasks.complete_subtree', task_id=task.id) }}"
@@ -128,7 +139,6 @@
           <button class="btn btn-soft" type="submit">Set due date</button>
         </form>
       </div>
-      <p class="hint">Applies to this task and every sub-task under it.</p>
     </section>
 
   </aside>
