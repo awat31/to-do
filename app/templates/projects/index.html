@@ -4,24 +4,59 @@
 <div class="page-head">
   <h1>Projects</h1>
   <div class="head-actions">
+    <form method="post" action="{{ url_for('projects.set_show_completed') }}" class="hide-done-toggle">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <label class="switch" title="When on, completed projects are listed below the active ones">
+        <input type="checkbox" name="show" value="1" {{ 'checked' if show_completed }}
+               class="js-autosubmit">
+        <span class="switch-track"><span class="switch-knob"></span></span>
+        <span class="switch-label">Show completed</span>
+      </label>
+    </form>
     <a class="btn btn-primary" href="{{ url_for('projects.create') }}">New project</a>
   </div>
 </div>
+
+{% macro project_card(project) %}
+<a class="project-card{{ ' is-completed' if project.completed }}" draggable="{{ 'false' if project.completed else 'true' }}"
+   data-project-id="{{ project.id }}"
+   style="--chip: {{ color_hex(project.color) }}" href="{{ url_for('projects.detail', project_id=project.id) }}">
+  <span class="project-swatch"></span>
+  <span class="project-name">{{ project.name }}</span>
+  {% set count = counts.get(project.id, 0) %}
+  <span class="project-count">{{ count }} task{{ '' if count == 1 else 's' }}</span>
+  {% if project.notes %}<span class="project-notes-preview">{{ project.notes | truncate(90) }}</span>{% endif %}
+  <form method="post" action="{{ url_for('projects.toggle_completed', project_id=project.id) }}" class="inline-form project-complete-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.path }}">
+    <button class="btn btn-sm btn-soft" type="submit"
+            title="{{ 'Reopen project' if project.completed else 'Mark project as completed' }}">
+      {{ 'Reopen' if project.completed else 'Complete' }}
+    </button>
+  </form>
+</a>
+{% endmacro %}
+
 {% if projects %}
 <p class="hint project-reorder-status" role="status">Drag projects to change their order.</p>
 <div class="project-grid" data-reorder-url="{{ url_for('projects.reorder') }}">
   {% for project in projects %}
-  <a class="project-card" draggable="true" data-project-id="{{ project.id }}"
-     style="--chip: {{ color_hex(project.color) }}" href="{{ url_for('projects.detail', project_id=project.id) }}">
-    <span class="project-swatch"></span>
-    <span class="project-name">{{ project.name }}</span>
-    {% set count = counts.get(project.id, 0) %}
-    <span class="project-count">{{ count }} task{{ '' if count == 1 else 's' }}</span>
-    {% if project.notes %}<span class="project-notes-preview">{{ project.notes | truncate(90) }}</span>{% endif %}
-  </a>
+    {{ project_card(project) }}
   {% endfor %}
 </div>
 {% else %}
 <p class="empty big">No projects yet. <a href="{{ url_for('projects.create') }}">Create one</a> to group tasks and keep notes.</p>
+{% endif %}
+
+{% if completed %}
+<section class="section completed-projects">
+  <h2>Completed projects <span class="count">{{ completed | length }}</span></h2>
+  <div class="project-grid">
+    {% for project in completed %}
+      {{ project_card(project) }}
+    {% endfor %}
+  </div>
+</section>
 {% endif %}
 {% endblock %}
