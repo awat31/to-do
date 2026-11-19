@@ -268,6 +268,18 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 .chip-overdue { background: var(--danger); border-color: var(--danger); color: var(--danger-text); }
 .chip-work { background: var(--work-soft); border-color: color-mix(in srgb, var(--work) 40%, var(--surface)); color: var(--work-ink); }
 .chip-lg { font-size: 0.9rem; padding: 0.35rem 0.9rem; }
+.detail-pane h2:not(:first-of-type) { margin-top: 1.4rem; }
+.chip-parent { background: var(--surface-soft); max-width: 100%; overflow-wrap: anywhere; }
+.detail-rows { display: flex; flex-direction: column; gap: 0.6rem; }
+.detail-row {
+  display: grid; grid-template-columns: auto 1fr; gap: 0.75rem;
+  align-items: center;
+}
+.detail-key { font-size: 0.85rem; color: var(--ink-soft); font-weight: 600; white-space: nowrap; }
+.detail-value { min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
+.detail-value .field-row { flex: 1; justify-content: flex-end; }
+.detail-value .input-date { max-width: 11rem; flex: 1 1 9rem; min-width: 0; width: auto; padding: 0.45rem 0.7rem; font-size: 0.9rem; }
+.detail-value .btn { flex: 0 0 auto; padding: 0.45rem 0.9rem; font-size: 0.9rem; }
 .progress {
   width: 56px; height: 7px; border-radius: 999px; background: var(--line);
   overflow: hidden; display: inline-block; vertical-align: middle;

@@ -304,7 +304,10 @@ def test_task_detail_shows_project_before_due_date_and_labels_subtree_action(log
 
     page = logged_in.get(f"/tasks/{task.id}").data.decode()
 
-    assert page.index("<h2>Project</h2>") < page.index("<h2>Due date</h2>")
+    assert page.index('<span class="detail-key">Project</span>') < page.index(
+        '<span class="detail-key">Due date</span>'
+    )
+    assert "Project before due" in page
     assert "Change project" in page
     assert "Set due date" in page
     assert "Mark whole subtree complete" in page
@@ -2771,3 +2774,23 @@ def test_project_detail_has_complete_button(logged_in):
     page = logged_in.get(f"/projects/{project.id}").data.decode()
     assert "Reopen project" in page
     assert "Complete project" not in page
+
+
+def test_task_detail_has_complete_button(logged_in):
+    from app.models import Task
+    task = _create_task(logged_in, title="Buttoned task")
+
+    page = logged_in.get(f"/tasks/{task.id}").data.decode()
+    assert "Complete task" in page
+    assert "Reopen task" not in page
+
+    token = _token(logged_in.get(f"/tasks/{task.id}").data.decode())
+    logged_in.post(
+        f"/tasks/{task.id}/toggle",
+        data={"csrf_token": token, "next": f"/tasks/{task.id}"},
+        follow_redirects=True,
+    )
+    page = logged_in.get(f"/tasks/{task.id}").data.decode()
+    assert "Reopen task" in page
+    assert "Complete task" not in page
+    assert Task.query.get(task.id).done
