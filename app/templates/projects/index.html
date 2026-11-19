@@ -27,14 +27,6 @@
   {% set count = counts.get(project.id, 0) %}
   <span class="project-count">{{ count }} task{{ '' if count == 1 else 's' }}</span>
   {% if project.notes %}<span class="project-notes-preview">{{ project.notes | truncate(90) }}</span>{% endif %}
-  <form method="post" action="{{ url_for('projects.toggle_completed', project_id=project.id) }}" class="inline-form project-complete-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="next" value="{{ request.path }}">
-    <button class="btn btn-sm btn-soft" type="submit"
-            title="{{ 'Reopen project' if project.completed else 'Mark project as completed' }}">
-      {{ 'Reopen' if project.completed else 'Complete' }}
-    </button>
-  </form>
 </a>
 {% endmacro %}
 
