@@ -18,6 +18,8 @@ fi
 
 mkdir -p instance
 
+echo "${cwd}" > instance/install-dir
+
 .venv/bin/flask --app wsgi db upgrade
 
 cat << EOF > /etc/systemd/system/todo.service
