@@ -1181,6 +1181,39 @@ def test_completing_task_from_tasks_page_returns_to_tasks_page(logged_in):
     assert task.done
 
 
+@pytest.mark.parametrize("hide_completed", [False, True])
+def test_toggling_task_from_project_returns_to_project(logged_in, hide_completed):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Task project", "color": "blue"})
+    project = Project.query.filter_by(name="Task project").one()
+    task = _create_task(logged_in, title="Project task", project=project.id)
+    project_url = f"/projects/{project.id}"
+    if hide_completed:
+        logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": project_url})
+
+    page = logged_in.get(project_url).data.decode()
+    toggle_form = page.split(f'action="/tasks/{task.id}/toggle"', 1)[1].split("</form>", 1)[0]
+    assert f'name="next" value="{project_url}"' in toggle_form
+
+    response = logged_in.post(f"/tasks/{task.id}/toggle", data={"next": project_url})
+    assert response.status_code == 302
+    assert response.headers["Location"] == project_url
+    db.session.refresh(task)
+    assert task.done
+
+    page = logged_in.get(project_url).data.decode()
+    if hide_completed:
+        assert "Project task" not in page
+    else:
+        assert 'class="task-card is-done"' in page
+        assert f'action="/tasks/{task.id}/toggle"' in page
+        response = logged_in.post(f"/tasks/{task.id}/toggle", data={"next": project_url})
+        assert response.headers["Location"] == project_url
+        db.session.refresh(task)
+        assert not task.done
+
+
 def test_task_index_can_sort_by_project(logged_in):
     from app.models import Project
 

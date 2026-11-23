@@ -9,11 +9,11 @@
   {% endif %}
 {% endmacro %}
 
-{% macro task_card(task, next_url=None, show_dates=true, default_date=None, show_delete=false, show_work_dates=true) %}
+{% macro task_card(task, next_url=None, show_dates=true, default_date=None, show_delete=false, show_work_dates=true, toggle_next_url=None) %}
 <div class="task-card {{ 'is-done' if task.done }}">
   <form method="post" action="{{ url_for('tasks.toggle', task_id=task.id) }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+    {% if toggle_next_url or next_url %}<input type="hidden" name="next" value="{{ toggle_next_url or next_url }}">{% endif %}
     <button class="check" type="submit" title="{{ 'Mark as not done' if task.done else 'Mark as done' }}"
       aria-pressed="{{ 'true' if task.done else 'false' }}">{{ '✓' if task.done else '' }}</button>
   </form>
