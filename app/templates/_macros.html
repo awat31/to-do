@@ -74,16 +74,19 @@
 </div>
 {% endmacro %}
 
-{% macro task_tree(tasks, next_url=None) %}
-<ul class="task-tree">
-  {% for task in tasks recursive %}
-  <li>
-    <div class="tree-row">
-      {{ task_card(task, next_url=next_url) }}
+{% macro task_tree(parent, tasks) %}
+<ul class="task-tree task-order" data-reorder-url="{{ url_for('tasks.reorder_subtasks', task_id=parent.id) }}">
+  {% for task in tasks %}
+  <li class="task-order-item" data-task-id="{{ task.id }}">
+    <div class="task-order-row">
+      <span class="task-drag-handle" draggable="true" aria-hidden="true" title="Drag to reorder" hidden>⋮⋮</span>
+      <div class="tree-row">
+        {{ task_card(task) }}
+      </div>
     </div>
     {% set kids = task._filtered_children if task._filtered_children is defined else (task._children_cache if task._children_cache is defined else task.children) %}
     {% if kids %}
-      {{ loop(kids | list) }}
+      {{ task_tree(task, kids | list) }}
     {% endif %}
   </li>
   {% endfor %}

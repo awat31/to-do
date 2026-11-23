@@ -137,8 +137,7 @@
     });
   }
 
-  const taskOrder = document.querySelector(".project-task-order[data-reorder-url]");
-  if (taskOrder) {
+  document.querySelectorAll(".task-order[data-reorder-url]").forEach((taskOrder) => {
     const status = document.querySelector(".task-reorder-status");
     let dragged = null;
     let previousOrder = [];
@@ -148,13 +147,14 @@
     const restore = (order) => order.forEach((row) => taskOrder.appendChild(row));
     const updateHandles = () => {
       rows().forEach((row) => {
-        row.querySelector(".task-drag-handle").draggable = !saving;
+        row.querySelector(":scope > .task-order-row > .task-drag-handle").draggable = !saving;
       });
     };
     const save = (before) => {
       saving = true;
       updateHandles();
       status.textContent = "Saving task order…";
+      status.hidden = false;
       window.postJSON(taskOrder.dataset.reorderUrl, {
         task_ids: rows().map((row) => Number(row.dataset.taskId)),
       })
@@ -173,8 +173,10 @@
         });
     };
 
-    status.hidden = false;
-    rows().forEach((row) => { row.querySelector(".task-drag-handle").hidden = false; });
+    status.hidden = !status.textContent.trim();
+    rows().forEach((row) => {
+      row.querySelector(":scope > .task-order-row > .task-drag-handle").hidden = false;
+    });
     updateHandles();
     taskOrder.addEventListener("dragstart", (event) => {
       const handle = event.target.closest(".task-drag-handle");
@@ -182,7 +184,8 @@
         event.preventDefault();
         return;
       }
-      dragged = handle.closest(".project-task-row");
+      event.stopPropagation();
+      dragged = handle.closest(".task-order-item");
       previousOrder = rows();
       dropped = false;
       dragged.classList.add("is-dragging");
@@ -191,7 +194,11 @@
     taskOrder.addEventListener("dragover", (event) => {
       if (!dragged) return;
       event.preventDefault();
-      const target = event.target.closest(".project-task-row");
+      event.stopPropagation();
+      let target = event.target.closest(".task-order-item");
+      while (target && target.parentElement !== taskOrder) {
+        target = target.parentElement.closest(".task-order-item");
+      }
       if (!target || target === dragged) return;
       const bounds = target.getBoundingClientRect();
       taskOrder.insertBefore(dragged, event.clientY > bounds.top + bounds.height / 2
@@ -201,18 +208,20 @@
     taskOrder.addEventListener("drop", (event) => {
       if (!dragged) return;
       event.preventDefault();
+      event.stopPropagation();
       dropped = true;
       if (rows().some((row, index) => row !== previousOrder[index])) save(previousOrder);
     });
-    taskOrder.addEventListener("dragend", () => {
+    taskOrder.addEventListener("dragend", (event) => {
       if (!dragged) return;
+      event.stopPropagation();
       if (!dropped) restore(previousOrder);
       dragged.classList.remove("is-dragging");
       rows().forEach((row) => row.classList.remove("is-drop-target"));
       dragged = null;
       updateHandles();
     });
-  }
+  });
 
   // Debounced, serialised autosave for note editors. The final edit is sent
   // with sendBeacon/keepalive when the page is hidden, and transient failures

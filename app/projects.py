@@ -18,7 +18,7 @@ from .tasks import move_subtree
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
-from .queries import filter_task_tree, prepare_tasks
+from .queries import apply_task_order, filter_task_tree, prepare_tasks
 from .utils import csrf_valid, flash_form_errors, notes_payload, redirect_back
 
 bp = Blueprint("projects", __name__, url_prefix="/projects")
@@ -133,27 +133,15 @@ def reorder_tasks(project_id: int):
     project = project_or_404(project_id)
     payload = request.get_json()
     task_ids = payload.get("task_ids") if isinstance(payload, dict) else None
-    if not isinstance(task_ids, list) or not all(
-        isinstance(task_id, int) and not isinstance(task_id, bool)
-        for task_id in task_ids
-    ):
-        return {"ok": False, "error": "Invalid task order."}, 400
-
     roots = project.root_tasks.all()
     if session.get("hide_completed", False):
         prepare_tasks(user_id=current_user.id)
         visible = filter_task_tree(roots, hide_done=True)
     else:
         visible = roots
-    by_id = {task.id: task for task in visible}
-    if len(task_ids) != len(set(task_ids)) or set(task_ids) != set(by_id):
-        return {"ok": False, "error": "Task list changed. Reload and try again."}, 400
-
-    reordered = iter(by_id[task_id] for task_id in task_ids)
-    for position, task in enumerate(roots):
-        if task.id in by_id:
-            task = next(reordered)
-        task.position = position
+    error = apply_task_order(task_ids, roots, visible)
+    if error:
+        return {"ok": False, "error": error}, 400
     db.session.commit()
     return {"ok": True}
 

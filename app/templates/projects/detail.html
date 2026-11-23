@@ -35,12 +35,14 @@
     <section class="section">
       <h2>Tasks</h2>
       {% if roots %}
-        <p class="hint task-reorder-status" role="status" hidden>Drag tasks to change their order.</p>
-        <ul class="task-tree task-list project-task-order" data-reorder-url="{{ url_for('projects.reorder_tasks', project_id=project.id) }}">
+        <p class="hint task-reorder-status" role="status" hidden></p>
+        <ul class="task-tree task-list task-order" data-reorder-url="{{ url_for('projects.reorder_tasks', project_id=project.id) }}">
           {% for task in roots %}
-            <li class="project-task-row" data-task-id="{{ task.id }}">
-              <span class="task-drag-handle" draggable="true" aria-hidden="true" title="Drag to reorder" hidden>⋮⋮</span>
-              <div class="tree-row">{{ task_card(task, show_delete=true, toggle_next_url=request.path) }}</div>
+            <li class="task-order-item" data-task-id="{{ task.id }}">
+              <div class="task-order-row">
+                <span class="task-drag-handle" draggable="true" aria-hidden="true" title="Drag to reorder" hidden>⋮⋮</span>
+                <div class="tree-row">{{ task_card(task, show_delete=true, toggle_next_url=request.path) }}</div>
+              </div>
             </li>
           {% endfor %}
         </ul>

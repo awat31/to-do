@@ -86,7 +86,8 @@ can also add a work-on date directly from a dashboard, list, or calendar.
 Sub-tasks can be nested; on a parent task, the progress indicator summarizes
 completed leaf tasks.
 
-On a task's detail page, **Sub-tree actions** can mark the task and all its
+On a task's detail page, drag sub-tasks to reorder them within their parent;
+their order is saved. **Sub-tree actions** can mark the task and all its
 sub-tasks done, move them to a project, or set their due date. The Tasks page
 shows top-level tasks only, puts completed tasks last, and filters by title,
 project, and open/done status as you type or change a filter. Drag project

@@ -33,6 +33,7 @@ from .forms import (
 )
 from .models import DeletedBatch, Project, Task, TaskDate, db, utcnow
 from .queries import (
+    apply_task_order,
     due_in,
     prepare_tasks,
     work_rows,
@@ -261,6 +262,20 @@ def detail(task_id: int):
         subtask_form=QuickTaskForm(),
         projects=user_projects().order_by(Project.name).all(),
     )
+
+
+@bp.route("/<int:task_id>/reorder-subtasks", methods=("POST",))
+@login_required
+def reorder_subtasks(task_id: int):
+    task = task_or_404(task_id)
+    payload = request.get_json()
+    task_ids = payload.get("task_ids") if isinstance(payload, dict) else None
+    children = user_tasks().filter_by(parent_id=task.id).order_by(Task.position, Task.id).all()
+    error = apply_task_order(task_ids, children, children)
+    if error:
+        return {"ok": False, "error": error}, 400
+    db.session.commit()
+    return {"ok": True}
 
 
 @bp.route("/<int:task_id>/edit", methods=("GET", "POST"))

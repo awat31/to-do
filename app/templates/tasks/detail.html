@@ -35,7 +35,8 @@
     <section class="section">
       <h2>Sub-tasks <span class="count">{{ task.children | length }}</span></h2>
       {% if task.children %}
-        {{ task_tree(task.children | list) }}
+        <p class="hint task-reorder-status" role="status" hidden></p>
+        {{ task_tree(task, task.children | list) }}
       {% else %}
         <p class="empty">No sub-tasks yet.</p>
       {% endif %}
