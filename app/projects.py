@@ -18,7 +18,7 @@ from .tasks import move_subtree
 from .forms import DeleteForm, ProjectForm, QuickTaskForm
 from .models import Project, Task, db
 from .palette import PROJECT_COLORS
-from .queries import filter_task_tree, prepare_tasks
+from .queries import apply_task_order, filter_task_tree, prepare_tasks
 from .utils import csrf_valid, flash_form_errors, notes_payload, redirect_back
 
 bp = Blueprint("projects", __name__, url_prefix="/projects")
@@ -114,7 +114,6 @@ def reorder():
 def detail(project_id: int):
     project = project_or_404(project_id)
     hide_completed = session.get("hide_completed", False)
-    # When completed tasks are visible, sort them below the open ones.
     prepare_tasks(user_id=current_user.id, done_last=not hide_completed)
     roots = project.root_tasks.all()
     if hide_completed:
@@ -126,6 +125,25 @@ def detail(project_id: int):
         task_form=QuickTaskForm(),
         delete_form=DeleteForm(),
     )
+
+
+@bp.route("/<int:project_id>/reorder-tasks", methods=("POST",))
+@login_required
+def reorder_tasks(project_id: int):
+    project = project_or_404(project_id)
+    payload = request.get_json()
+    task_ids = payload.get("task_ids") if isinstance(payload, dict) else None
+    roots = project.root_tasks.all()
+    if session.get("hide_completed", False):
+        prepare_tasks(user_id=current_user.id)
+        visible = filter_task_tree(roots, hide_done=True)
+    else:
+        visible = roots
+    error = apply_task_order(task_ids, roots, visible)
+    if error:
+        return {"ok": False, "error": error}, 400
+    db.session.commit()
+    return {"ok": True}
 
 
 @bp.route("/<int:project_id>/edit", methods=("GET", "POST"))

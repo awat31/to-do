@@ -299,6 +299,12 @@ a.chip:hover { text-decoration: none; filter: brightness(0.96); }
 .tree-row {
   margin-bottom: 0.45rem;
 }
+.task-order-row { display: flex; align-items: center; gap: 0.35rem; }
+.task-order-row .tree-row { flex: 1; min-width: 0; }
+.task-drag-handle { cursor: grab; color: var(--ink-soft); user-select: none; margin-bottom: 0.45rem; }
+.task-order-item.is-dragging { opacity: 0.45; }
+.task-order-item.is-drop-target > .task-order-row > .tree-row > .task-card { outline: 2px dashed var(--accent); outline-offset: 3px; }
+.task-reorder-status { margin: -0.5rem 0 0.75rem; }
 
 /* ---- task filters ---- */
 .filter-bar {

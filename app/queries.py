@@ -111,6 +111,24 @@ def _children_of(task: Task) -> list[Task]:
     return list(task.children)
 
 
+def apply_task_order(task_ids, tasks: list[Task], visible: list[Task]) -> str | None:
+    """Reorder visible siblings while keeping hidden siblings in their slots."""
+    if not isinstance(task_ids, list) or not all(
+        isinstance(task_id, int) and not isinstance(task_id, bool)
+        for task_id in task_ids
+    ):
+        return "Invalid task order."
+    by_id = {task.id: task for task in visible}
+    if len(task_ids) != len(set(task_ids)) or set(task_ids) != set(by_id):
+        return "Task list changed. Reload and try again."
+    reordered = iter(by_id[task_id] for task_id in task_ids)
+    for position, task in enumerate(tasks):
+        if task.id in by_id:
+            task = next(reordered)
+        task.position = position
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Batch preparation (query-count friendly)
 # ---------------------------------------------------------------------------
