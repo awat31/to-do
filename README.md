@@ -98,8 +98,9 @@ Choose **New project** to create a colour-coded project. Drag its card on the
 Projects page to change the project order. Its page has a
 notebook for plain-text notes and a task list. Use the add-task field to create
 a task or search for an existing task to attach it to the project. Completing
-or reopening a task keeps you on the project page. Deleting a project does not
-delete its tasks.
+or reopening a task keeps you on the project page. Drag tasks to reorder the
+top-level task list; the order is saved. Deleting a project does not delete its
+tasks.
 
 ### Calendar
 

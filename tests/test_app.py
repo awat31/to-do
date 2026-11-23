@@ -1258,6 +1258,95 @@ def test_project_order_can_be_saved(logged_in):
     )
 
 
+def test_project_task_order_persists_and_preserves_subtasks(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Ordered project", "color": "blue"})
+    project = Project.query.filter_by(name="Ordered project").one()
+    first = _create_task(logged_in, title="First project task", project=project.id)
+    child = _create_task(logged_in, title="Project subtask", project=project.id, parent=first.id)
+    second = _create_task(logged_in, title="Second project task", project=project.id)
+    third = _create_task(logged_in, title="Third project task", project=project.id)
+    url = f"/projects/{project.id}"
+
+    page = logged_in.get(url).data.decode()
+    assert f'data-reorder-url="{url}/reorder-tasks"' in page
+    assert 'class="task-drag-handle"' in page
+    assert "task-move-up" not in page and "task-move-down" not in page
+    assert f'data-task-id="{child.id}"' not in page
+    response = logged_in.post(
+        f"{url}/reorder-tasks", json={"task_ids": [third.id, first.id, second.id]}
+    )
+    assert response.status_code == 200
+    assert response.json == {"ok": True}
+    db.session.expire_all()
+    assert child.parent_id == first.id
+    assert [task.id for task in project.root_tasks.all()] == [third.id, first.id, second.id]
+    page = logged_in.get(url).data.decode()
+    assert page.index("Third project task") < page.index("First project task") < page.index("Second project task")
+
+
+def test_project_task_order_with_hidden_completed_tasks(logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Hidden project", "color": "blue"})
+    project = Project.query.filter_by(name="Hidden project").one()
+    first = _create_task(logged_in, title="Visible first", project=project.id)
+    hidden = _create_task(logged_in, title="Hidden completed", project=project.id)
+    parent = _create_task(logged_in, title="Completed parent", project=project.id)
+    _create_task(logged_in, title="Open child", project=project.id, parent=parent.id)
+    last = _create_task(logged_in, title="Visible last", project=project.id)
+    hidden.done = parent.done = True
+    db.session.commit()
+    url = f"/projects/{project.id}"
+    logged_in.post("/preferences/hide-completed", data={"hide": "1", "next": url})
+    page = logged_in.get(url).data.decode()
+    assert "Hidden completed" not in page
+    assert "Completed parent" in page
+
+    response = logged_in.post(
+        f"{url}/reorder-tasks", json={"task_ids": [last.id, parent.id, first.id]}
+    )
+    assert response.status_code == 200
+    db.session.expire_all()
+    assert [task.id for task in project.root_tasks.all()] == [last.id, hidden.id, parent.id, first.id]
+    logged_in.post("/preferences/hide-completed", data={"next": url})
+    page = logged_in.get(url).data.decode()
+    assert page.index("Visible last") < page.index("Hidden completed") < page.index("Completed parent") < page.index("Visible first")
+
+
+def test_project_task_reorder_rejects_invalid_or_foreign_tasks(app, logged_in):
+    from app.models import Project
+
+    logged_in.post("/projects/new", data={"name": "Owned project", "color": "blue"})
+    project = Project.query.filter_by(name="Owned project").one()
+    first = _create_task(logged_in, title="Owned first", project=project.id)
+    second = _create_task(logged_in, title="Owned second", project=project.id)
+    child = _create_task(logged_in, title="Owned child", project=project.id, parent=first.id)
+    other = _create_task(logged_in, title="Other project task")
+    alice = _signup(app)
+    url = f"/projects/{project.id}/reorder-tasks"
+
+    for task_ids in ([first.id], [first.id, first.id], [first.id, child.id],
+                     [first.id, other.id], [first.id, True], "invalid"):
+        assert logged_in.post(url, json={"task_ids": task_ids}).status_code == 400
+    assert alice.post(url, json={"task_ids": [second.id, first.id]}).status_code == 404
+    db.session.expire_all()
+    assert [task.id for task in project.root_tasks.all()] == [first.id, second.id]
+
+
+def test_project_task_reorder_requires_csrf(csrf_client):
+    from app.models import Project
+
+    token = _token(csrf_client.get("/projects/new").data.decode())
+    csrf_client.post("/projects/new", data={"name": "CSRF project", "color": "blue", "csrf_token": token})
+    project = Project.query.filter_by(name="CSRF project").one()
+    url = f"/projects/{project.id}/reorder-tasks"
+    assert csrf_client.post(url, json={"task_ids": []}).status_code == 400
+    token = _meta_csrf(csrf_client, f"/projects/{project.id}")
+    assert csrf_client.post(url, json={"task_ids": []}, headers={"X-CSRFToken": token}).status_code == 200
+
+
 def test_subtask_add_returns_focus_to_add_field(logged_in):
     parent = _create_task(logged_in, title="Parent for quick add")
     response = logged_in.post(

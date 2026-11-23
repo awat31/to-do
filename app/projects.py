@@ -114,7 +114,6 @@ def reorder():
 def detail(project_id: int):
     project = project_or_404(project_id)
     hide_completed = session.get("hide_completed", False)
-    # When completed tasks are visible, sort them below the open ones.
     prepare_tasks(user_id=current_user.id, done_last=not hide_completed)
     roots = project.root_tasks.all()
     if hide_completed:
@@ -126,6 +125,37 @@ def detail(project_id: int):
         task_form=QuickTaskForm(),
         delete_form=DeleteForm(),
     )
+
+
+@bp.route("/<int:project_id>/reorder-tasks", methods=("POST",))
+@login_required
+def reorder_tasks(project_id: int):
+    project = project_or_404(project_id)
+    payload = request.get_json()
+    task_ids = payload.get("task_ids") if isinstance(payload, dict) else None
+    if not isinstance(task_ids, list) or not all(
+        isinstance(task_id, int) and not isinstance(task_id, bool)
+        for task_id in task_ids
+    ):
+        return {"ok": False, "error": "Invalid task order."}, 400
+
+    roots = project.root_tasks.all()
+    if session.get("hide_completed", False):
+        prepare_tasks(user_id=current_user.id)
+        visible = filter_task_tree(roots, hide_done=True)
+    else:
+        visible = roots
+    by_id = {task.id: task for task in visible}
+    if len(task_ids) != len(set(task_ids)) or set(task_ids) != set(by_id):
+        return {"ok": False, "error": "Task list changed. Reload and try again."}, 400
+
+    reordered = iter(by_id[task_id] for task_id in task_ids)
+    for position, task in enumerate(roots):
+        if task.id in by_id:
+            task = next(reordered)
+        task.position = position
+    db.session.commit()
+    return {"ok": True}
 
 
 @bp.route("/<int:project_id>/edit", methods=("GET", "POST"))
