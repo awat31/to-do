@@ -86,7 +86,8 @@ can also add a work-on date directly from a dashboard, list, or calendar.
 Sub-tasks can be nested; on a parent task, the progress indicator summarizes
 completed leaf tasks.
 
-On a task's detail page, **Sub-tree actions** can mark the task and all its
+On a task's detail page, drag sub-tasks to reorder them within their parent;
+their order is saved. **Sub-tree actions** can mark the task and all its
 sub-tasks done, move them to a project, or set their due date. The Tasks page
 shows top-level tasks only, puts completed tasks last, and filters by title,
 project, and open/done status as you type or change a filter. Drag project
@@ -97,8 +98,10 @@ cards on the Projects page to reorder them.
 Choose **New project** to create a colour-coded project. Drag its card on the
 Projects page to change the project order. Its page has a
 notebook for plain-text notes and a task list. Use the add-task field to create
-a task or search for an existing task to attach it to the project. Deleting a
-project does not delete its tasks.
+a task or search for an existing task to attach it to the project. Completing
+or reopening a task keeps you on the project page. Drag tasks to reorder the
+top-level task list; the order is saved. Deleting a project does not delete its
+tasks.
 
 ### Calendar
 

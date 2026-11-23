@@ -137,6 +137,92 @@
     });
   }
 
+  document.querySelectorAll(".task-order[data-reorder-url]").forEach((taskOrder) => {
+    const status = document.querySelector(".task-reorder-status");
+    let dragged = null;
+    let previousOrder = [];
+    let saving = false;
+    let dropped = false;
+    const rows = () => Array.from(taskOrder.children);
+    const restore = (order) => order.forEach((row) => taskOrder.appendChild(row));
+    const updateHandles = () => {
+      rows().forEach((row) => {
+        row.querySelector(":scope > .task-order-row > .task-drag-handle").draggable = !saving;
+      });
+    };
+    const save = (before) => {
+      saving = true;
+      updateHandles();
+      status.textContent = "Saving task order…";
+      status.hidden = false;
+      window.postJSON(taskOrder.dataset.reorderUrl, {
+        task_ids: rows().map((row) => Number(row.dataset.taskId)),
+      })
+        .then((data) => {
+          if (!data.ok) throw new Error("Task order was not saved.");
+          status.textContent = "Task order saved.";
+        })
+        .catch((error) => {
+          restore(before);
+          status.textContent = "Could not save task order. Reload the page and try again.";
+          console.error(error);
+        })
+        .finally(() => {
+          saving = false;
+          updateHandles();
+        });
+    };
+
+    status.hidden = !status.textContent.trim();
+    rows().forEach((row) => {
+      row.querySelector(":scope > .task-order-row > .task-drag-handle").hidden = false;
+    });
+    updateHandles();
+    taskOrder.addEventListener("dragstart", (event) => {
+      const handle = event.target.closest(".task-drag-handle");
+      if (!handle || saving) {
+        event.preventDefault();
+        return;
+      }
+      event.stopPropagation();
+      dragged = handle.closest(".task-order-item");
+      previousOrder = rows();
+      dropped = false;
+      dragged.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+    });
+    taskOrder.addEventListener("dragover", (event) => {
+      if (!dragged) return;
+      event.preventDefault();
+      event.stopPropagation();
+      let target = event.target.closest(".task-order-item");
+      while (target && target.parentElement !== taskOrder) {
+        target = target.parentElement.closest(".task-order-item");
+      }
+      if (!target || target === dragged) return;
+      const bounds = target.getBoundingClientRect();
+      taskOrder.insertBefore(dragged, event.clientY > bounds.top + bounds.height / 2
+        ? target.nextElementSibling : target);
+      rows().forEach((row) => row.classList.toggle("is-drop-target", row === target));
+    });
+    taskOrder.addEventListener("drop", (event) => {
+      if (!dragged) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dropped = true;
+      if (rows().some((row, index) => row !== previousOrder[index])) save(previousOrder);
+    });
+    taskOrder.addEventListener("dragend", (event) => {
+      if (!dragged) return;
+      event.stopPropagation();
+      if (!dropped) restore(previousOrder);
+      dragged.classList.remove("is-dragging");
+      rows().forEach((row) => row.classList.remove("is-drop-target"));
+      dragged = null;
+      updateHandles();
+    });
+  });
+
   // Debounced, serialised autosave for note editors. The final edit is sent
   // with sendBeacon/keepalive when the page is hidden, and transient failures
   // are retried with exponential backoff.
